@@ -814,3 +814,144 @@ nav{gap:7px;padding-top:22px}
   .room-number-block b{font-size:24px}
   .room-status-chip{font-size:8px;min-height:27px}
 }
+
+
+/* =========================================================
+   ROOMORA PREMIUM WORKSPACE — FINAL OVERRIDE LAYER
+   ========================================================= */
+:root{
+  --lux-ink:#10211c;
+  --lux-muted:#708079;
+  --lux-line:#e2e9e6;
+  --lux-green:#155f4b;
+  --lux-green-dark:#0b4033;
+  --lux-gold:#c99a51;
+  --lux-surface:#ffffff;
+  --lux-soft:#f7faf8;
+}
+body{font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial,sans-serif}
+button,a,input,select{font-family:inherit}
+.brand-link{text-decoration:none;color:inherit}
+.workspace-main{min-height:100vh;max-width:none;padding:34px 40px 64px}
+.workspace-main>.settings-page{max-width:1500px;margin:0 auto;padding:0}
+.workspace-main .back-link{display:none}
+.workspace-main .settings-header{min-height:112px;margin-bottom:24px;padding:6px 2px 16px;border-bottom:1px solid rgba(218,226,222,.8)}
+.workspace-main .settings-header h1{font-size:32px;line-height:1.15;margin:8px 0 7px}
+.workspace-main .settings-header p{font-size:13px;color:var(--lux-muted);max-width:720px}
+.mobile-dock{display:none}
+
+/* Dashboard room experience */
+.rooms-panel{padding:24px}
+.rooms-panel .panel-head{align-items:center;gap:20px}
+.rooms-panel .panel-head h2{font-size:20px}
+.room-tools .search{width:290px}
+.floor-tabs{gap:8px;margin:22px 0 14px}
+.floor-tabs button{height:36px;min-width:64px;font-size:10px;font-weight:700;background:#fff;border-color:#e2e9e6}
+.legend{padding:2px 0 18px;margin-bottom:18px;border-bottom:1px solid #edf1ef;font-size:9px}
+.room-grid{grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:16px}
+.room-card-pro{
+  min-height:202px;padding:17px;border-radius:20px;background:#fff;
+  border:1px solid #e0e8e4;box-shadow:0 8px 24px rgba(17,47,38,.045);
+  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+}
+.room-card-pro:hover{transform:translateY(-3px);border-color:#cfded8;box-shadow:0 18px 42px rgba(17,47,38,.09)}
+.room-card-pro:before{height:4px;left:14px;right:14px;top:0;border-radius:0 0 8px 8px}
+.room-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.room-number-block span{display:block;font-size:8px;color:#95a09c;font-weight:700;margin-bottom:4px}
+.room-number-block b{font-size:28px;line-height:1;color:#10211c;letter-spacing:-.8px}
+.room-status-chip{
+  display:inline-flex;align-items:center;gap:6px;height:29px;padding:0 10px;border-radius:999px;
+  font-size:9px;font-weight:800;border:1px solid transparent
+}
+.room-status-chip.available{background:#eef8f3;color:#31755e;border-color:#dceee6}
+.room-status-chip.occupied{background:#edf3fa;color:#456b92;border-color:#dbe6f1}
+.room-status-chip.checkout{background:#fff6e7;color:#9b6f2d;border-color:#f1e2c3}
+.room-status-chip.request{background:#fff0ef;color:#a64f4b;border-color:#eed8d6}
+.room-status-chip.cleaning{background:#f3effa;color:#7163a1;border-color:#e6dff2}
+.room-status-chip.maintenance{background:#eff2f1;color:#616b67;border-color:#e0e6e3}
+.room-type-row{display:flex;align-items:center;gap:7px;margin-top:15px;color:#778680;font-size:10px}
+.room-occupancy{display:flex;align-items:center;gap:10px;min-height:64px;margin-top:16px;padding:12px;border:1px solid #eaf0ed;border-radius:15px;background:#fafcfb}
+.room-occupancy.guest{background:linear-gradient(145deg,#f8fafc,#fff);border-color:#e2eaf0}
+.room-occupancy.vacant{background:linear-gradient(145deg,#f3faf7,#fbfdfc);color:#3e7d66}
+.room-avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#e4edf5;color:#41678e;font-weight:800}
+.room-occupancy b{display:block;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room-occupancy span,.room-occupancy small{display:block;font-size:8px;color:#83918c}
+.room-occupancy small{margin-top:4px}
+.room-quick-actions{display:flex;gap:8px;margin-top:auto;padding-top:14px}
+.room-action{
+  appearance:none;height:35px;border-radius:10px;border:1px solid #dfe7e3;padding:0 12px;
+  font-size:9px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:5px;
+  transition:.16s ease
+}
+.room-action.subtle{background:#fff;color:#53635d}
+.room-action.subtle:hover{background:#f7faf8;border-color:#c9d7d2;color:#25483c}
+.room-action.primary{margin-right:auto;background:linear-gradient(135deg,#176950,#0e4d3d);border-color:#155f4b;color:#fff;box-shadow:0 8px 18px rgba(21,95,75,.17)}
+.room-action.primary:hover{transform:translateY(-1px);box-shadow:0 12px 24px rgba(21,95,75,.24)}
+
+/* Shared page surfaces */
+.workspace-main .panel,.workspace-main .settings-card,.workspace-main .limits-card{
+  background:#fff;border:1px solid var(--lux-line);box-shadow:0 10px 32px rgba(16,43,34,.045);border-radius:20px
+}
+.workspace-main .directory-toolbar{padding:4px 0 18px;margin-bottom:12px}
+.workspace-main .search{height:44px;border-radius:12px;background:#fbfcfc}
+.workspace-main .directory-toolbar select{height:44px;border-radius:12px}
+.rooms-table{min-width:980px}
+.rooms-table th{height:48px;padding:0 14px;background:#f6f9f7;font-size:9px}
+.rooms-table td{padding:15px 14px;font-size:10px;vertical-align:middle}
+.rooms-table tbody tr{transition:background .15s}
+.rooms-table tbody tr:hover td{background:#f8fbf9}
+.table-actions button,.detail-button,.status-btn,.request-actions button{
+  appearance:none;border:1px solid #dce5e1;background:#fff;color:#355047;border-radius:10px;
+  min-height:34px;padding:0 11px;font-size:9px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:5px
+}
+.table-actions button:hover,.detail-button:hover,.request-actions button:hover{background:#f3f8f6;border-color:#bfd1c9;color:#155f4b}
+.table-actions button.danger,.request-actions button.danger,.ghost-danger{color:#aa4d4d!important;border-color:#efd8d8!important;background:#fffafa!important}
+.request-board{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.request-card{padding:17px;border-radius:18px}
+.request-card-head b{font-size:15px}
+.request-card>p{font-size:11px}
+.request-actions{display:flex;gap:8px;margin-top:12px}
+.request-actions button:disabled{opacity:.55;cursor:not-allowed}
+.login-field>div{min-height:46px}
+.login-field input,.login-field select{font-size:11px}
+.employee-row{padding:14px;border-radius:14px}
+.settings-note{border-radius:16px}
+
+/* Consumables */
+.consumables-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+.consumable-card{background:#fff;border:1px solid var(--lux-line);border-radius:20px;padding:18px;box-shadow:0 9px 28px rgba(16,43,34,.045)}
+.consumable-head{display:flex;align-items:center;gap:11px}
+.consumable-icon{width:43px;height:43px;border-radius:13px;display:grid;place-items:center;background:#edf6f2;color:#155f4b}
+.consumable-head b{display:block;font-size:14px}
+.consumable-head span{display:block;margin-top:3px;font-size:9px;color:#84918c}
+.limit-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:18px}
+.limit-metrics>div{padding:11px;border:1px solid #edf1ef;border-radius:12px;background:#fafcfb;text-align:center}
+.limit-metrics span{display:block;font-size:8px;color:#89958f}
+.limit-metrics b{display:block;margin-top:4px;font-size:17px}
+.approval-note{display:flex;align-items:center;gap:6px;margin-top:14px;padding-top:12px;border-top:1px solid #edf1ef;font-size:8px;color:#7b8983}
+
+/* Responsive */
+@media(max-width:1280px){
+  .workspace-main{padding:30px 26px 56px}
+  .room-grid{grid-template-columns:repeat(auto-fit,minmax(195px,1fr))}
+}
+@media(max-width:900px){
+  .workspace-main{margin-right:78px;padding:24px 18px 70px}
+  .workspace-main>.settings-page{padding:0}
+}
+@media(max-width:620px){
+  .workspace-sidebar{display:none}
+  .workspace-main{margin:0;padding:18px 12px 88px}
+  .workspace-main .settings-header{min-height:auto;align-items:flex-start}
+  .workspace-main .settings-header h1{font-size:26px}
+  .mobile-dock{
+    position:fixed;display:grid;grid-template-columns:repeat(5,1fr);left:10px;right:10px;bottom:10px;height:66px;
+    background:rgba(12,48,39,.96);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);
+    border-radius:19px;z-index:90;box-shadow:0 18px 50px rgba(6,31,24,.28);overflow:hidden
+  }
+  .mobile-dock a{color:#9fb3ac;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:8px}
+  .mobile-dock a.active{color:#fff;background:rgba(255,255,255,.08)}
+  .room-grid{grid-template-columns:1fr}
+  .room-card-pro{min-height:184px}
+  .consumables-grid{grid-template-columns:1fr}
+}

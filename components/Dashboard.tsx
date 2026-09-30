@@ -202,7 +202,7 @@ export default function Dashboard() {
         <Link href="/rooms" className="nav-item"><Bed size={20}/> الغرف والإقامات</Link>
         <Link href="/requests" className="nav-item"><ListChecks size={20}/> طلبات الغرف {activeRequests.length > 0 && <em>{activeRequests.length}</em>}</Link>
         <Link href="/guests" className="nav-item"><Users size={20}/> النزلاء</Link>
-        <button className="nav-item"><Package size={20}/> المستهلكات</button>
+        <Link href="/consumables" className="nav-item"><Package size={20}/> المستهلكات</Link>
         <Link href="/reports" className="nav-item"><ChartBar size={20}/> التقارير</Link>
         <div className="nav-sep" />
         <Link href="/employees" className="nav-item"><ShieldCheck size={20}/> الموظفون والصلاحيات</Link>
@@ -249,7 +249,7 @@ export default function Dashboard() {
             <span className={`dot ${n.tone}`}/>
             <div><b>{n.title}</b><p>{n.body}</p></div>
           </div>)}
-          <button className="text-btn">عرض مركز الإشعارات</button>
+          <Link href="/requests" className="text-btn">عرض مركز الإشعارات</Link>
         </motion.div>}</AnimatePresence>
       </header>
 
