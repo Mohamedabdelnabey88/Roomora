@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, CookingPot, HandPalm, Prohibit, ShieldCheck } from "@phosphor-icons/react";
+import { notifyOperationsChanged } from "@/lib/operations-events";
 
 export type ActiveRequest = {
   id:string;
@@ -28,7 +29,7 @@ export default function RequestActions({
       headers:{"content-type":"application/json"},
       body:JSON.stringify({status})
     });
-    if (response.ok) await onChanged();
+    if (response.ok) { notifyOperationsChanged(); await onChanged(); }
   }
 
   async function decide(decision:"approved"|"rejected") {
@@ -37,7 +38,7 @@ export default function RequestActions({
       headers:{"content-type":"application/json"},
       body:JSON.stringify({decision})
     });
-    if (response.ok) await onChanged();
+    if (response.ok) { notifyOperationsChanged(); await onChanged(); }
   }
 
   if (request.status==="approval_required") {
