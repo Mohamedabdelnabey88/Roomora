@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Clock, Funnel, ListChecks, MagnifyingGlass, ShieldCheck } from "@phosphor-icons/react";
 import RequestActions, { type ActiveRequest } from "@/components/RequestActions";
+import RequestDetailDialog from "@/components/RequestDetailDialog";
 
 const statusLabels:Record<string,string>={
   new:"جديد",
@@ -22,6 +23,7 @@ export default function RequestsPanel() {
   const [query,setQuery]=useState("");
   const [status,setStatus]=useState("all");
   const [scope,setScope]=useState("active");
+  const [detailId,setDetailId]=useState<string|null>(null);
 
   async function load() {
     setLoading(true);
@@ -117,9 +119,11 @@ export default function RequestsPanel() {
           <p>{item.items || "طلب غرفة"}</p>
           <div className="request-card-meta"><span className={"table-status "+item.status}>{statusLabels[item.status] || item.status}</span><small>{mins>=25?"حرج":mins>=15?"تحذير":"ضمن SLA"}</small></div>
           {item.approval_reason && <div className="approval-reason">{item.approval_reason}</div>}
+          <button className="detail-button" onClick={()=>setDetailId(item.id)}>عرض التفاصيل</button>
           <RequestActions request={item} role={role} onChanged={load}/>
         </article>;
       })}</div>}
     </section>
+    <RequestDetailDialog requestId={detailId} onClose={()=>setDetailId(null)}/>
   </main>;
 }
