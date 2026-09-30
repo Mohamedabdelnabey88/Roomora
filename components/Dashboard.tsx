@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, Bed, Buildings, CalendarCheck, ChartBar, CheckCircle, Clock, DoorOpen,
@@ -8,6 +9,7 @@ import {
   ShieldCheck, SignOut, Sparkle, Users, X
 } from "@phosphor-icons/react";
 import { notifications, requests, rooms, type Room } from "@/lib/data";
+import { getHotelBusinessDay } from "@/lib/business-day";
 
 const labels = {
   available:"متاحة",
@@ -35,6 +37,8 @@ export default function Dashboard() {
   const occupied = rooms.filter(r => ["occupied","checkout","request"].includes(r.status)).length;
   const available = rooms.filter(r => r.status === "available").length;
   const checkout = rooms.filter(r => r.status === "checkout").length;
+  const businessDay = getHotelBusinessDay(new Date(), { timezone:"Asia/Riyadh", startHour:6, startMinute:0 });
+  const todayLabel = new Intl.DateTimeFormat("ar-SA", { timeZone:"Asia/Riyadh", weekday:"long", day:"numeric", month:"long", year:"numeric" }).format(new Date());
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -52,7 +56,7 @@ export default function Dashboard() {
         <button className="nav-item"><ChartBar size={20}/> التقارير</button>
         <div className="nav-sep" />
         <button className="nav-item"><ShieldCheck size={20}/> الموظفون والصلاحيات</button>
-        <button className="nav-item"><Gear size={20}/> الإعدادات</button>
+        <Link href="/settings" className="nav-item"><Gear size={20}/> الإعدادات</Link>
       </nav>
 
       <div className="shift-card">
@@ -70,7 +74,7 @@ export default function Dashboard() {
     <main className="main">
       <header className="topbar">
         <div>
-          <p className="eyebrow">الأربعاء، 30 سبتمبر 2026</p>
+          <p className="eyebrow">{todayLabel}</p>
           <h1>صباح الخير 👋</h1>
           <p className="sub">كل ما يحدث في الفندق أمامك الآن، بدون تشتيت.</p>
         </div>
@@ -78,7 +82,7 @@ export default function Dashboard() {
         <div className="top-actions">
           <div className="business-day">
             <Clock size={18}/>
-            <div><span>يوم الفندق</span><b>30 سبتمبر · يبدأ 06:00</b></div>
+            <div><span>يوم الفندق</span><b>{businessDay.label} · يبدأ 06:00</b></div>
           </div>
           <button className="icon-btn" onClick={() => setNotifOpen(v=>!v)}><Bell size={21}/><i>3</i></button>
           <button className="primary-btn"><Plus size={18}/> تسجيل دخول نزيل</button>
@@ -166,7 +170,7 @@ export default function Dashboard() {
             </div>
             <p>الطلبات غير المكتملة تُرحّل تلقائيًا لليوم التالي بدون فقد أي سجل.</p>
             <div className="day-progress"><div style={{width:"78%"}}/></div>
-            <div className="day-foot"><span>اليوم الحالي</span><b>30 سبتمبر 2026</b></div>
+            <div className="day-foot"><span>اليوم الحالي</span><b>{businessDay.label}</b></div>
           </div>
         </div>
       </section>
@@ -188,7 +192,7 @@ export default function Dashboard() {
             <div><span>تاريخ الدخول</span><b>29 سبتمبر · 16:32</b></div>
             <div><span>الخروج المتوقع</span><b>2 أكتوبر · 12:00</b></div>
             <div><span>مدة الإقامة</span><b>{selected.nights} ليالٍ</b></div>
-            <div><span>يوم الفندق</span><b>30 سبتمبر</b></div>
+            <div><span>يوم الفندق</span><b>{businessDay.label}</b></div>
           </div>
           <button className="primary-btn full"><Plus size={18}/> إضافة طلب للغرفة</button>
           <button className="secondary-btn full">تمديد الإقامة</button>
