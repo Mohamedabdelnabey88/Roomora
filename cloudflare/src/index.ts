@@ -512,7 +512,7 @@ export default {
 
       if (!detail) return json({ error:"request_not_found" }, { status:404 });
 
-      const [lines, approval] = await Promise.all([
+      const [lines, approval, timeline] = await Promise.all([
         env.DB.prepare(`
           SELECT ri.name, ri.unit, srl.quantity
           FROM service_request_lines srl
@@ -528,10 +528,18 @@ export default {
           WHERE ar.service_request_id=?1
           ORDER BY ar.created_at DESC
           LIMIT 1
-        `).bind(requestId).first()
+        `).bind(requestId).first(),
+        env.DB.prepare(`
+          SELECT al.action, al.metadata_json, al.created_at, u.name AS actor_name
+          FROM audit_logs al
+          LEFT JOIN users u ON u.id=al.actor_user_id
+          WHERE al.entity_type='service_request'
+            AND al.entity_id=?1
+          ORDER BY al.created_at ASC, al.id ASC
+        `).bind(requestId).all()
       ]);
 
-      return json({request:detail,lines:lines.results,approval:approval || null});
+      return json({request:detail,lines:lines.results,approval:approval || null,timeline:timeline.results});
     }
 
     if (url.pathname.match(/^\/api\/stays\/[^/]+$/) && request.method === "GET") {
