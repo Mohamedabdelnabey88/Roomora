@@ -5,4 +5,4 @@ compatibility_date = "2026-09-30"
 [[d1_databases]]
 binding = "DB"
 database_name = "roomora-db"
-database_id = "REPLACE_AFTER_D1_CREATION"
+database_id = "a7650d31-f183-4869-8d09-bf81fc16bdf8"
