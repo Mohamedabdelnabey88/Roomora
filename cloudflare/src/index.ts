@@ -11,7 +11,7 @@ type SessionUser = {
 };
 
 const cors = {
-  "access-control-allow-origin": "*",
+  "access-control-allow-origin": "https://roomora-lac.vercel.app",
   "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
   "access-control-allow-headers": "content-type,authorization,x-setup-key"
 };
@@ -179,42 +179,9 @@ export default {
     }
 
     if (url.pathname === "/api/setup/reset-admin" && request.method === "POST") {
-      if (!env.SETUP_KEY) return json({ error: "setup_disabled" }, { status: 503 });
-      if (request.headers.get("x-setup-key") !== env.SETUP_KEY) return json({ error: "forbidden" }, { status: 403 });
-
-      try {
-        const body = await readJson<{ username?: string; password?: string }>(request);
-        const username = body?.username?.trim().toLowerCase();
-        const password = body?.password || "";
-        if (!username || password.length < 10) return json({ error: "invalid_reset_payload" }, { status: 400 });
-
-        const admin = await env.DB.prepare(`
-          SELECT id, username FROM users
-          WHERE username = ?1 AND role = 'admin'
-          LIMIT 1
-        `).bind(username).first<{ id: string; username: string }>();
-
-        if (!admin) return json({ error: "admin_not_found" }, { status: 404 });
-
-        const passwordHash = await hashPassword(password);
-        await env.DB.prepare(`
-          UPDATE users
-          SET password_hash = ?1, active = 1, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?2
-        `).bind(passwordHash, admin.id).run();
-
-        await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?1").bind(admin.id).run();
-
-        await env.DB.prepare(`
-          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
-          VALUES (?1, 'admin_password_reset_via_setup_key', 'user', ?1, '{"source":"setup_recovery"}')
-        `).bind(admin.id).run();
-
-        return json({ ok: true });
-      } catch (error) {
-        console.error("reset_admin_failed", error instanceof Error ? error.message : String(error));
-        return json({ error: "reset_internal_error" }, { status: 500 });
-      }
+      const count = await env.DB.prepare("SELECT COUNT(*) AS users FROM users").first<{ users: number }>();
+      if ((count?.users ?? 0) > 0) return json({ error: "not_found" }, { status: 404 });
+      return json({ error: "setup_required" }, { status: 409 });
     }
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
@@ -325,23 +292,40 @@ export default {
       const stayId = crypto.randomUUID();
       const checkinAt = now.toISOString();
 
-      await env.DB.batch([
+      const write = await env.DB.batch([
         env.DB.prepare(`
           INSERT INTO stays (
             id, room_id, guest_name, guest_phone, checkin_at,
             expected_checkout_at, status, created_by
-          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'in_house', ?7)
+          )
+          SELECT ?1, r.id, ?3, ?4, ?5, ?6, 'in_house', ?7
+          FROM rooms r
+          WHERE r.id = ?2
+            AND r.operational_status = 'available'
+            AND NOT EXISTS (
+              SELECT 1 FROM stays s
+              WHERE s.room_id = r.id AND s.status = 'in_house'
+            )
         `).bind(stayId, roomId, guestName, guestPhone, checkinAt, checkout.toISOString(), actor.id),
         env.DB.prepare(`
           UPDATE rooms
           SET operational_status = 'occupied', updated_at = CURRENT_TIMESTAMP
           WHERE id = ?1
-        `).bind(roomId),
-        env.DB.prepare(`
-          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
-          VALUES (?1, 'stay_checkin', 'stay', ?2, ?3)
-        `).bind(actor.id, stayId, JSON.stringify({ roomId, roomNumber: room.number }))
+            AND EXISTS (
+              SELECT 1 FROM stays s
+              WHERE s.id = ?2 AND s.status = 'in_house'
+            )
+        `).bind(roomId, stayId)
       ]);
+
+      if (!write[0]?.meta?.changes) {
+        return json({ error: "room_not_available" }, { status: 409 });
+      }
+
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+        VALUES (?1, 'stay_checkin', 'stay', ?2, ?3)
+      `).bind(actor.id, stayId, JSON.stringify({ roomId, roomNumber: room.number })).run();
 
       return json({
         id: stayId,
@@ -413,6 +397,17 @@ export default {
 
       if (!stay) return json({ error: "active_stay_not_found" }, { status: 404 });
 
+      const openRequests = await env.DB.prepare(`
+        SELECT COUNT(*) AS count
+        FROM service_requests
+        WHERE stay_id = ?1
+          AND status NOT IN ('delivered','cancelled')
+      `).bind(stayId).first<{count:number}>();
+
+      if (Number(openRequests?.count || 0) > 0) {
+        return json({ error: "open_requests_exist", count: Number(openRequests?.count || 0) }, { status: 409 });
+      }
+
       const actualCheckoutAt = new Date().toISOString();
       await env.DB.batch([
         env.DB.prepare(`
@@ -460,8 +455,15 @@ export default {
           sr.status,
           sr.priority,
           sr.business_day,
-          sr.requested_at,
-          sr.delivered_at,
+          CASE
+            WHEN instr(sr.requested_at, 'T') > 0 THEN sr.requested_at
+            ELSE replace(sr.requested_at, ' ', 'T') || 'Z'
+          END AS requested_at,
+          CASE
+            WHEN sr.delivered_at IS NULL THEN NULL
+            WHEN instr(sr.delivered_at, 'T') > 0 THEN sr.delivered_at
+            ELSE replace(sr.delivered_at, ' ', 'T') || 'Z'
+          END AS delivered_at,
           r.number AS room_number,
           s.guest_name,
           GROUP_CONCAT(ri.name || ' × ' || srl.quantity, '، ') AS items,
@@ -494,9 +496,14 @@ export default {
       }>(request);
 
       const stayId = body?.stayId?.trim();
-      const lines = (body?.lines || [])
-        .map(line=>({ itemId:line.itemId?.trim() || "", quantity:Number(line.quantity || 0) }))
-        .filter(line=>line.itemId && Number.isInteger(line.quantity) && line.quantity > 0);
+      const merged = new Map<string, number>();
+      for (const raw of body?.lines || []) {
+        const itemId = raw.itemId?.trim() || "";
+        const quantity = Number(raw.quantity || 0);
+        if (!itemId || !Number.isInteger(quantity) || quantity <= 0) continue;
+        merged.set(itemId, (merged.get(itemId) || 0) + quantity);
+      }
+      const lines = Array.from(merged, ([itemId, quantity]) => ({ itemId, quantity }));
 
       if (!stayId || lines.length === 0) return json({ error:"invalid_request_payload" }, { status:400 });
 
@@ -641,20 +648,23 @@ export default {
       }
 
       const deliveredAt = next === "delivered" ? new Date().toISOString() : null;
-      await env.DB.batch([
-        env.DB.prepare(`
-          UPDATE service_requests
-          SET status = ?1,
-              acknowledged_by = CASE WHEN ?1 IN ('acknowledged','preparing') AND acknowledged_by IS NULL THEN ?2 ELSE acknowledged_by END,
-              delivered_by = CASE WHEN ?1 = 'delivered' THEN ?2 ELSE delivered_by END,
-              delivered_at = CASE WHEN ?1 = 'delivered' THEN ?3 ELSE delivered_at END
-          WHERE id = ?4
-        `).bind(next,actor.id,deliveredAt,requestId),
-        env.DB.prepare(`
-          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
-          VALUES (?1, 'service_request_status_changed', 'service_request', ?2, ?3)
-        `).bind(actor.id,requestId,JSON.stringify({from:current.status,to:next}))
-      ]);
+      const updated = await env.DB.prepare(`
+        UPDATE service_requests
+        SET status = ?1,
+            acknowledged_by = CASE WHEN ?1 IN ('acknowledged','preparing') AND acknowledged_by IS NULL THEN ?2 ELSE acknowledged_by END,
+            delivered_by = CASE WHEN ?1 = 'delivered' THEN ?2 ELSE delivered_by END,
+            delivered_at = CASE WHEN ?1 = 'delivered' THEN ?3 ELSE delivered_at END
+        WHERE id = ?4 AND status = ?5
+      `).bind(next,actor.id,deliveredAt,requestId,current.status).run();
+
+      if (!updated.meta.changes) {
+        return json({ error:"request_state_changed" }, { status:409 });
+      }
+
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+        VALUES (?1, 'service_request_status_changed', 'service_request', ?2, ?3)
+      `).bind(actor.id,requestId,JSON.stringify({from:current.status,to:next})).run();
 
       return json({ok:true,status:next});
     }
@@ -680,14 +690,19 @@ export default {
       const requestStatus = body.decision === "approved" ? "new" : "cancelled";
       const now = new Date().toISOString();
 
+      const decided = await env.DB.prepare(`
+        UPDATE approval_requests
+        SET status = ?1, decided_by = ?2, decision_note = ?3, decided_at = ?4
+        WHERE id = ?5 AND status = 'pending'
+      `).bind(body.decision,actor.id,body.note?.trim() || null,now,approval.id).run();
+
+      if (!decided.meta.changes) {
+        return json({ error:"approval_already_decided" }, { status:409 });
+      }
+
       await env.DB.batch([
         env.DB.prepare(`
-          UPDATE approval_requests
-          SET status = ?1, decided_by = ?2, decision_note = ?3, decided_at = ?4
-          WHERE id = ?5
-        `).bind(body.decision,actor.id,body.note?.trim() || null,now,approval.id),
-        env.DB.prepare(`
-          UPDATE service_requests SET status = ?1 WHERE id = ?2
+          UPDATE service_requests SET status = ?1 WHERE id = ?2 AND status = 'approval_required'
         `).bind(requestStatus,requestId),
         env.DB.prepare(`
           INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
@@ -816,6 +831,7 @@ export default {
             SELECT COUNT(*)
             FROM service_requests sr
             WHERE sr.room_id = r.id
+              AND sr.stay_id = s.id
               AND sr.status NOT IN ('delivered','cancelled')
           ) AS open_requests
         FROM rooms r
