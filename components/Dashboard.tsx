@@ -80,10 +80,20 @@ export default function Dashboard() {
 
   useEffect(() => {
     void Promise.all([loadRooms(),loadRequests(),loadCurrentUser()]);
-    const timer = window.setInterval(() => { void refreshOperations(); }, 30000);
-    const unsubscribe = subscribeOperationsChanged(()=>{ void refreshOperations(); });
+    const refresh = () => { void refreshOperations(); };
+    const timer = window.setInterval(refresh, 15000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    const unsubscribe = subscribeOperationsChanged(refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("pageshow", refresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       unsubscribe();
     };
   }, []);
@@ -172,9 +182,11 @@ export default function Dashboard() {
     [rooms, activeFloor, statusFilter, query]
   );
 
-  const occupied = rooms.filter(r => ["occupied","checkout","request"].includes(r.status)).length;
-  const available = rooms.filter(r => r.status === "available").length;
-  const checkoutCount = rooms.filter(r => r.status === "checkout").length;
+  // Stay presence is the source of truth for occupancy. Visual room status can
+  // temporarily become "request" or "checkout" while the room is still occupied.
+  const occupied = rooms.filter(r => Boolean(r.stayId)).length;
+  const available = rooms.filter(r => !r.stayId && r.status === "available").length;
+  const checkoutCount = rooms.filter(r => Boolean(r.stayId) && r.status === "checkout").length;
   const businessDay = getHotelBusinessDay(new Date(), { timezone:"Asia/Riyadh", startHour:6, startMinute:0 });
   const todayLabel = new Intl.DateTimeFormat("ar-SA", { timeZone:"Asia/Riyadh", weekday:"long", day:"numeric", month:"long", year:"numeric" }).format(new Date());
 
