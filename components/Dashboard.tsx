@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { notifications, requests, fallbackRooms, mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
 import { getHotelBusinessDay } from "@/lib/business-day";
+import { CheckinDialog, ExtendStayDialog } from "@/components/StayDialogs";
 
 const labels = {
   available:"متاحة",
@@ -28,9 +29,13 @@ export default function Dashboard() {
   const [rooms, setRooms] = useState<Room[]>(fallbackRooms);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [checkinRoom, setCheckinRoom] = useState<Room | null>(null);
+  const [extendRoom, setExtendRoom] = useState<Room | null>(null);
+  const [actionError, setActionError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/rooms", { cache: "no-store" })
+  async function loadRooms() {
+    setLoadingRooms(true);
+    return fetch("/api/rooms", { cache: "no-store" })
       .then(async (res) => {
         if (res.status === 401) { window.location.href = "/login"; throw new Error("unauthorized"); }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -42,7 +47,41 @@ export default function Dashboard() {
       })
       .catch(() => setDataError("تعذر الاتصال بقاعدة بيانات الفندق"))
       .finally(() => setLoadingRooms(false));
-  }, []);
+  }
+
+  useEffect(() => { void loadRooms(); }, []);
+
+  function formatStayDate(value?: string) {
+    if (!value) return "—";
+    return new Intl.DateTimeFormat("ar-SA", {
+      timeZone:"Asia/Riyadh",
+      day:"numeric",
+      month:"short",
+      hour:"2-digit",
+      minute:"2-digit"
+    }).format(new Date(value));
+  }
+
+  function maskedPhone(value?: string) {
+    if (!value) return "غير مسجل";
+    const clean = value.replace(/\s+/g,"");
+    if (clean.length < 5) return "••••";
+    return clean.slice(0,2) + "•••••" + clean.slice(-3);
+  }
+
+  async function checkout(room: Room) {
+    if (!room.stayId) return;
+    if (!window.confirm("تأكيد تسجيل خروج النزيل من الغرفة " + room.number + "؟")) return;
+    setActionError("");
+    const response = await fetch("/api/stays/" + encodeURIComponent(room.stayId) + "/checkout", { method:"POST" });
+    const payload = await response.json().catch(()=>({}));
+    if (!response.ok) {
+      setActionError(payload.error === "active_stay_not_found" ? "الإقامة لم تعد نشطة" : "تعذر تسجيل الخروج");
+      return;
+    }
+    setSelected(null);
+    await loadRooms();
+  }
 
   const filtered = useMemo(
     () => rooms.filter(r =>
@@ -103,7 +142,11 @@ export default function Dashboard() {
             <div><span>يوم الفندق</span><b>{businessDay.label} · يبدأ 06:00</b></div>
           </div>
           <button className="icon-btn" onClick={() => setNotifOpen(v=>!v)}><Bell size={21}/>{notifications.length > 0 && <i>{notifications.length}</i>}</button>
-          <button className="primary-btn"><Plus size={18}/> تسجيل دخول نزيل</button>
+          <button className="primary-btn" onClick={()=>{
+            const firstAvailable=rooms.find(r=>r.status==="available");
+            if (firstAvailable) setCheckinRoom(firstAvailable);
+            else setActionError("لا توجد غرفة متاحة حاليًا");
+          }}><Plus size={18}/> تسجيل دخول نزيل</button>
         </div>
 
         <AnimatePresence>{notifOpen && <motion.div className="notif-pop" initial={{opacity:0,y:-8,scale:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-8,scale:.98}}>
@@ -207,22 +250,35 @@ export default function Dashboard() {
         </div>
 
         {selected.guest ? <>
-          <div className="guest-box"><span>النزيل الحالي</span><b>{selected.guest}</b><p>05•••••728</p></div>
+          <div className="guest-box"><span>النزيل الحالي</span><b>{selected.guest}</b><p>{maskedPhone(selected.guestPhone)}</p></div>
           <div className="detail-grid">
-            <div><span>تاريخ الدخول</span><b>29 سبتمبر · 16:32</b></div>
-            <div><span>الخروج المتوقع</span><b>2 أكتوبر · 12:00</b></div>
+            <div><span>تاريخ الدخول</span><b>{formatStayDate(selected.checkinAt)}</b></div>
+            <div><span>الخروج المتوقع</span><b>{formatStayDate(selected.expectedCheckoutAt)}</b></div>
             <div><span>مدة الإقامة</span><b>{selected.nights} ليالٍ</b></div>
             <div><span>يوم الفندق</span><b>{businessDay.label}</b></div>
           </div>
           <button className="primary-btn full"><Plus size={18}/> إضافة طلب للغرفة</button>
-          <button className="secondary-btn full">تمديد الإقامة</button>
-          <button className="danger-ghost full">تسجيل خروج النزيل</button>
+          <button className="secondary-btn full" onClick={()=>setExtendRoom(selected)}>تمديد الإقامة</button>
+          <button className="danger-ghost full" onClick={()=>void checkout(selected)}>تسجيل خروج النزيل</button>
         </> : <>
           <div className="empty-state"><CheckCircle size={32}/><b>الغرفة متاحة</b><p>لا توجد إقامة نشطة مرتبطة بهذه الغرفة.</p></div>
-          <button className="primary-btn full"><Plus size={18}/> تسجيل دخول نزيل</button>
+          <button className="primary-btn full" onClick={()=>setCheckinRoom(selected)}><Plus size={18}/> تسجيل دخول نزيل</button>
         </>}
       </motion.aside>
     </>}</AnimatePresence>
+
+    {actionError && <div className="action-toast" onClick={()=>setActionError("")}>{actionError}</div>}
+
+    <CheckinDialog
+      room={checkinRoom}
+      onClose={()=>setCheckinRoom(null)}
+      onSuccess={async()=>{ setSelected(null); await loadRooms(); }}
+    />
+    <ExtendStayDialog
+      room={extendRoom}
+      onClose={()=>setExtendRoom(null)}
+      onSuccess={async()=>{ setSelected(null); await loadRooms(); }}
+    />
   </div>
 }
 
