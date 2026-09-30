@@ -8,7 +8,7 @@ import {
   Gear, HouseLine, ListChecks, MagnifyingGlass, MoonStars, Package, Plus,
   ShieldCheck, SignOut, Sparkle, Users, X
 } from "@phosphor-icons/react";
-import { notifications, fallbackRooms, mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
+import { fallbackRooms, mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
 import { getHotelBusinessDay } from "@/lib/business-day";
 import { CheckinDialog, ExtendStayDialog } from "@/components/StayDialogs";
 import RequestDialog from "@/components/RequestDialog";
@@ -72,7 +72,11 @@ export default function Dashboard() {
     await Promise.all([loadRooms(),loadRequests()]);
   }
 
-  useEffect(() => { void Promise.all([loadRooms(),loadRequests(),loadCurrentUser()]); }, []);
+  useEffect(() => {
+    void Promise.all([loadRooms(),loadRequests(),loadCurrentUser()]);
+    const timer = window.setInterval(() => { void refreshOperations(); }, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   function requestAgeMinutes(value:string) {
     return Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/60000));
@@ -84,6 +88,22 @@ export default function Dashboard() {
     if (mins<60) return "منذ "+mins+" د";
     return "منذ "+Math.floor(mins/60)+" س";
   }
+
+  const liveNotifications = activeRequests
+    .map(r=>{
+      const mins=requestAgeMinutes(r.requested_at);
+      if (r.status==="approval_required") {
+        return { title:"طلب يحتاج موافقة", body:"الغرفة "+r.room_number+" · "+(r.items || "طلب غرفة"), tone:"warning" as const };
+      }
+      if (mins>=25) {
+        return { title:"طلب متأخر بشكل حرج", body:"الغرفة "+r.room_number+" · "+requestAge(r.requested_at), tone:"critical" as const };
+      }
+      if (mins>=15) {
+        return { title:"طلب تجاوز وقت التنبيه", body:"الغرفة "+r.room_number+" · "+requestAge(r.requested_at), tone:"warning" as const };
+      }
+      return null;
+    })
+    .filter(Boolean) as Array<{title:string;body:string;tone:"critical"|"warning"|"info"}>;
 
   const requestStatusLabel:Record<string,string>={
     new:"جديد",
@@ -184,7 +204,7 @@ export default function Dashboard() {
             <Clock size={18}/>
             <div><span>يوم الفندق</span><b>{businessDay.label} · يبدأ 06:00</b></div>
           </div>
-          <button className="icon-btn" onClick={() => setNotifOpen(v=>!v)}><Bell size={21}/>{notifications.length > 0 && <i>{notifications.length}</i>}</button>
+          <button className="icon-btn" onClick={() => setNotifOpen(v=>!v)}><Bell size={21}/>{liveNotifications.length > 0 && <i>{liveNotifications.length}</i>}</button>
           <button className="primary-btn" onClick={()=>{
             const firstAvailable=rooms.find(r=>r.status==="available");
             if (firstAvailable) setCheckinRoom(firstAvailable);
@@ -193,8 +213,9 @@ export default function Dashboard() {
         </div>
 
         <AnimatePresence>{notifOpen && <motion.div className="notif-pop" initial={{opacity:0,y:-8,scale:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-8,scale:.98}}>
-          <div className="notif-head"><b>الإشعارات</b><span>{notifications.length} جديدة</span></div>
-          {notifications.map((n,i)=><div className="notif-row" key={i}>
+          <div className="notif-head"><b>الإشعارات</b><span>{liveNotifications.length} جديدة</span></div>
+          {liveNotifications.length===0 && <div className="requests-empty">لا توجد تنبيهات تشغيلية حاليًا.</div>}
+          {liveNotifications.map((n,i)=><div className="notif-row" key={i}>
             <span className={`dot ${n.tone}`}/>
             <div><b>{n.title}</b><p>{n.body}</p></div>
           </div>)}
