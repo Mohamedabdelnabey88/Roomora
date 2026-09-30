@@ -27,6 +27,7 @@ export type ApiRoom = {
   guest_phone?: string | null;
   checkin_at?: string | null;
   expected_checkout_at?: string | null;
+  open_requests?: number | null;
 };
 
 export const fallbackRooms: Room[] = [];
@@ -57,6 +58,8 @@ export function mapApiRoom(room: ApiRoom): Room {
     stayId: room.stay_id || undefined,
     checkinAt: room.checkin_at || undefined,
     expectedCheckoutAt: room.expected_checkout_at || undefined,
-    nights: nightsBetween(room.checkin_at, room.expected_checkout_at)
+    nights: nightsBetween(room.checkin_at, room.expected_checkout_at),
+    openRequests: Number(room.open_requests || 0),
+    status: Number(room.open_requests || 0) > 0 && mappedStatus === "occupied" ? "request" : mappedStatus
   };
 }
