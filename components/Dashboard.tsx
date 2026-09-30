@@ -179,9 +179,9 @@ export default function Dashboard() {
         <button className="nav-item active"><HouseLine size={20}/> لوحة التشغيل</button>
         <Link href="/rooms" className="nav-item"><Bed size={20}/> الغرف والإقامات</Link>
         <Link href="/requests" className="nav-item"><ListChecks size={20}/> طلبات الغرف {activeRequests.length > 0 && <em>{activeRequests.length}</em>}</Link>
-        <button className="nav-item"><Users size={20}/> النزلاء</button>
+        <Link href="/guests" className="nav-item"><Users size={20}/> النزلاء</Link>
         <button className="nav-item"><Package size={20}/> المستهلكات</button>
-        <button className="nav-item"><ChartBar size={20}/> التقارير</button>
+        <Link href="/reports" className="nav-item"><ChartBar size={20}/> التقارير</Link>
         <div className="nav-sep" />
         <Link href="/employees" className="nav-item"><ShieldCheck size={20}/> الموظفون والصلاحيات</Link>
         <Link href="/settings" className="nav-item"><Gear size={20}/> الإعدادات</Link>
