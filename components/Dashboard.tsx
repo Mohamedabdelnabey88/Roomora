@@ -38,6 +38,8 @@ export default function Dashboard() {
   const [activeRequests, setActiveRequests] = useState<ActiveRequest[]>([]);
   const [currentUser, setCurrentUser] = useState<{name:string;role:"admin"|"reception"}|null>(null);
   const [actionError, setActionError] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all"|Room["status"]>("all");
+  const [lastSync, setLastSync] = useState<Date|null>(null);
 
   async function loadRooms() {
     setLoadingRooms(true);
@@ -52,6 +54,7 @@ export default function Dashboard() {
         setRooms(mapped);
         setSelected(prev => prev ? (mapped.find(room => room.id === prev.id) || null) : null);
         setDataError(null);
+        setLastSync(new Date());
       })
       .catch(() => setDataError("تعذر الاتصال بقاعدة بيانات الفندق"))
       .finally(() => setLoadingRooms(false));
@@ -163,9 +166,10 @@ export default function Dashboard() {
   const filtered = useMemo(
     () => rooms.filter(r =>
       (activeFloor === "all" || r.floor === activeFloor) &&
+      (statusFilter === "all" || r.status === statusFilter || (statusFilter === "occupied" && ["occupied","checkout","request"].includes(r.status))) &&
       (r.number.includes(query) || (r.guest || "").includes(query))
     ),
-    [rooms, activeFloor, query]
+    [rooms, activeFloor, statusFilter, query]
   );
 
   const occupied = rooms.filter(r => ["occupied","checkout","request"].includes(r.status)).length;
@@ -238,11 +242,12 @@ export default function Dashboard() {
       </header>
 
       <section className="stats-grid">
-        <Stat icon={<Buildings/>} label="إجمالي الغرف" value={String(rooms.length)} hint="4 أنواع سكن" />
-        <Stat icon={<DoorOpen/>} label="الغرف المشغولة" value={String(occupied)} hint="الإشغال الحالي" accent />
-        <Stat icon={<CheckCircle/>} label="الغرف المتاحة" value={String(available)} hint="جاهزة للتسكين" />
-        <Stat icon={<CalendarCheck/>} label="خروج اليوم" value={String(checkoutCount)} hint="حسب يوم الفندق" />
+        <Stat icon={<Buildings/>} label="إجمالي الغرف" value={String(rooms.length)} hint="4 أنواع سكن" active={statusFilter==="all"} onClick={()=>setStatusFilter("all")} />
+        <Stat icon={<DoorOpen/>} label="الغرف المشغولة" value={String(occupied)} hint="الإشغال الحالي" accent active={statusFilter==="occupied"} onClick={()=>setStatusFilter("occupied")} />
+        <Stat icon={<CheckCircle/>} label="الغرف المتاحة" value={String(available)} hint="جاهزة للتسكين" active={statusFilter==="available"} onClick={()=>setStatusFilter("available")} />
+        <Stat icon={<CalendarCheck/>} label="خروج اليوم" value={String(checkoutCount)} hint="حسب يوم الفندق" active={statusFilter==="checkout"} onClick={()=>setStatusFilter("checkout")} />
       </section>
+      <div className="live-sync-row"><span className="live-dot"/> بيانات مباشرة من D1 {lastSync ? "· آخر تحديث "+lastSync.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : ""}</div>
 
       <section className="content-grid">
         <div className="panel rooms-panel">
@@ -376,9 +381,9 @@ export default function Dashboard() {
   </div>
 }
 
-function Stat({icon,label,value,hint,accent=false}:{icon:React.ReactNode,label:string,value:string,hint:string,accent?:boolean}) {
-  return <motion.div className={`stat-card ${accent?"accent":""}`} whileHover={{y:-3}} transition={{duration:.18}}>
+function Stat({icon,label,value,hint,accent=false,active=false,onClick}:{icon:React.ReactNode,label:string,value:string,hint:string,accent?:boolean,active?:boolean,onClick?:()=>void}) {
+  return <motion.button type="button" onClick={onClick} className={`stat-card stat-button ${accent?"accent":""} ${active?"selected":""}`} whileHover={{y:-3}} transition={{duration:.18}}>
     <div className="stat-icon">{icon}</div>
     <div><span>{label}</span><b>{value}</b><small>{hint}</small></div>
-  </motion.div>;
+  </motion.button>;
 }
