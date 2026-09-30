@@ -33,7 +33,14 @@ export type ApiRoom = {
 export const fallbackRooms: Room[] = [];
 
 export const requests: { id:string; room:string; item:string; qty:number; age:string; level:"normal"|"warning"|"critical"; status:string }[] = [];
-export const notifications: { title:string; body:string; tone:"critical"|"warning"|"info" }[] = [];
+function localDateRiyadh(value: string | Date) {
+  const d = typeof value === "string" ? new Date(value) : value;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone:"Asia/Riyadh", year:"numeric", month:"2-digit", day:"2-digit"
+  }).formatToParts(d);
+  const read=(t:string)=>parts.find(p=>p.type===t)?.value || "";
+  return read("year")+"-"+read("month")+"-"+read("day");
+}
 
 function nightsBetween(checkin?: string | null, checkout?: string | null) {
   if (!checkin || !checkout) return undefined;
@@ -47,19 +54,30 @@ export function mapApiRoom(room: ApiRoom): Room {
   const mappedStatus: RoomStatus =
     room.operational_status === "out_of_service" ? "maintenance" : room.operational_status;
 
+  const checkoutToday = Boolean(
+    room.expected_checkout_at &&
+    room.stay_id &&
+    localDateRiyadh(room.expected_checkout_at) === localDateRiyadh(new Date())
+  );
+  const liveStatus: RoomStatus =
+    Number(room.open_requests || 0) > 0 && mappedStatus === "occupied"
+      ? "request"
+      : checkoutToday && mappedStatus === "occupied"
+        ? "checkout"
+        : mappedStatus;
+
   return {
     id: room.id,
     number: room.number,
     floor: room.floor,
     type: room.room_type,
-    status: mappedStatus,
+    status: liveStatus,
     guest: room.guest_name || undefined,
     guestPhone: room.guest_phone || undefined,
     stayId: room.stay_id || undefined,
     checkinAt: room.checkin_at || undefined,
     expectedCheckoutAt: room.expected_checkout_at || undefined,
     nights: nightsBetween(room.checkin_at, room.expected_checkout_at),
-    openRequests: Number(room.open_requests || 0),
-    status: Number(room.open_requests || 0) > 0 && mappedStatus === "occupied" ? "request" : mappedStatus
+    openRequests: Number(room.open_requests || 0)
   };
 }
