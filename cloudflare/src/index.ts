@@ -447,7 +447,15 @@ export default {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error:"unauthorized" }, { status:401 });
 
-      const result = await env.DB.prepare(`
+      const scope = url.searchParams.get("scope") || "active";
+      const roomNumber = url.searchParams.get("room")?.trim() || "";
+      const statusFilter =
+        scope === "all" ? "" :
+        scope === "completed" ? "AND sr.status IN ('delivered','cancelled')" :
+        "AND sr.status NOT IN ('delivered','cancelled')";
+      const roomFilter = roomNumber ? "AND r.number = ?1" : "";
+
+      const sql = `
         SELECT
           sr.id,
           sr.stay_id,
@@ -466,6 +474,8 @@ export default {
           END AS delivered_at,
           r.number AS room_number,
           s.guest_name,
+          s.guest_phone,
+          sr.note,
           GROUP_CONCAT(ri.name || ' × ' || srl.quantity, '، ') AS items,
           MAX(ar.reason) AS approval_reason
         FROM service_requests sr
@@ -473,15 +483,17 @@ export default {
         JOIN stays s ON s.id = sr.stay_id
         LEFT JOIN service_request_lines srl ON srl.request_id = sr.id
         LEFT JOIN request_items ri ON ri.id = srl.item_id
-        LEFT JOIN approval_requests ar
-          ON ar.service_request_id = sr.id
-         AND ar.status = 'pending'
-        WHERE sr.status NOT IN ('delivered','cancelled')
+        LEFT JOIN approval_requests ar ON ar.service_request_id = sr.id
+        WHERE 1=1
+          ${statusFilter}
+          ${roomFilter}
         GROUP BY sr.id
-        ORDER BY sr.requested_at ASC
-        LIMIT 100
-      `).all();
+        ORDER BY sr.requested_at DESC
+        LIMIT 250
+      `;
 
+      const stmt = env.DB.prepare(sql);
+      const result = roomNumber ? await stmt.bind(roomNumber).all() : await stmt.all();
       return json(result.results);
     }
 
@@ -711,6 +723,87 @@ export default {
       ]);
 
       return json({ok:true,status:requestStatus});
+    }
+
+    if (url.pathname === "/api/stays" && request.method === "GET") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+
+      const result = await env.DB.prepare(`
+        SELECT
+          s.id,
+          s.guest_name,
+          s.guest_phone,
+          s.status,
+          s.checkin_at,
+          s.expected_checkout_at,
+          s.actual_checkout_at,
+          r.number AS room_number,
+          r.room_type,
+          COUNT(sr.id) AS total_requests,
+          SUM(CASE WHEN sr.status NOT IN ('delivered','cancelled') THEN 1 ELSE 0 END) AS open_requests
+        FROM stays s
+        JOIN rooms r ON r.id = s.room_id
+        LEFT JOIN service_requests sr ON sr.stay_id = s.id
+        GROUP BY s.id
+        ORDER BY s.checkin_at DESC
+        LIMIT 500
+      `).all();
+
+      return json(result.results);
+    }
+
+    if (url.pathname === "/api/reports/summary" && request.method === "GET") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+
+      const businessDay = await hotelBusinessDay(env);
+      const [roomStats, stayStats, requestStats, topItems] = await Promise.all([
+        env.DB.prepare(`
+          SELECT
+            COUNT(*) AS total_rooms,
+            SUM(CASE WHEN operational_status='available' THEN 1 ELSE 0 END) AS available_rooms,
+            SUM(CASE WHEN operational_status='occupied' THEN 1 ELSE 0 END) AS occupied_rooms
+          FROM rooms
+        `).first(),
+        env.DB.prepare(`
+          SELECT
+            SUM(CASE WHEN status='in_house' THEN 1 ELSE 0 END) AS in_house,
+            SUM(CASE WHEN status='checked_out' THEN 1 ELSE 0 END) AS checked_out_total,
+            SUM(CASE WHEN substr(checkin_at,1,10)=?1 THEN 1 ELSE 0 END) AS checkins_today,
+            SUM(CASE WHEN actual_checkout_at IS NOT NULL AND substr(actual_checkout_at,1,10)=?1 THEN 1 ELSE 0 END) AS checkouts_today
+          FROM stays
+        `).bind(businessDay).first(),
+        env.DB.prepare(`
+          SELECT
+            COUNT(*) AS total_requests,
+            SUM(CASE WHEN business_day=?1 THEN 1 ELSE 0 END) AS requests_today,
+            SUM(CASE WHEN status='approval_required' THEN 1 ELSE 0 END) AS awaiting_approval,
+            SUM(CASE WHEN status NOT IN ('delivered','cancelled') THEN 1 ELSE 0 END) AS active_requests,
+            AVG(CASE WHEN delivered_at IS NOT NULL THEN
+              (julianday(delivered_at)-julianday(requested_at))*24*60
+            END) AS avg_delivery_minutes
+          FROM service_requests
+        `).bind(businessDay).first(),
+        env.DB.prepare(`
+          SELECT ri.name, SUM(srl.quantity) AS quantity
+          FROM service_request_lines srl
+          JOIN request_items ri ON ri.id=srl.item_id
+          JOIN service_requests sr ON sr.id=srl.request_id
+          WHERE sr.status!='cancelled'
+          GROUP BY ri.id
+          ORDER BY quantity DESC
+          LIMIT 8
+        `).all()
+      ]);
+
+      return json({
+        businessDay,
+        roomStats,
+        stayStats,
+        requestStats,
+        topItems: topItems.results
+      });
     }
 
     if (url.pathname === "/api/admin/users" && request.method === "GET") {
