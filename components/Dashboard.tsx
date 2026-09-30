@@ -30,9 +30,9 @@ export default function Dashboard() {
   const [dataError, setDataError] = useState<string | null>(null);
 
   useEffect(() => {
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "https://roomora.mohamed27abdelnaby.workers.dev";
-    fetch(`${apiBase}/api/rooms`, { cache: "no-store" })
+    fetch("/api/rooms", { cache: "no-store" })
       .then(async (res) => {
+        if (res.status === 401) { window.location.href = "/login"; throw new Error("unauthorized"); }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<ApiRoom[]>;
       })
