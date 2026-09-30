@@ -3,11 +3,10 @@
 import { FormEvent, useState } from "react";
 import { motion } from "framer-motion";
 import { Eye, EyeSlash, LockKey, Sparkle, User } from "@phosphor-icons/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export default function LoginPanel() {
   const router = useRouter();
-  const search = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -27,7 +26,8 @@ export default function LoginPanel() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error === "invalid_credentials" ? "اسم المستخدم أو كلمة المرور غير صحيحة" : "تعذر تسجيل الدخول");
-      router.replace(search.get("next") || "/");
+      const next = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
+      router.replace(next || "/");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر تسجيل الدخول");
