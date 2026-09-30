@@ -443,6 +443,140 @@ export default {
       return json(result.results);
     }
 
+    if (url.pathname.startsWith("/api/admin/request-items/") && request.method === "PATCH") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+      if (actor.role !== "admin") return json({ error:"forbidden" }, { status:403 });
+
+      const itemId = url.pathname.split("/").pop() || "";
+      const body = await readJson<{
+        maxPerRequest?:number;
+        maxPerBusinessDay?:number;
+        maxPerStay?:number;
+      }>(request);
+
+      const values = [
+        Number(body?.maxPerRequest),
+        Number(body?.maxPerBusinessDay),
+        Number(body?.maxPerStay)
+      ];
+      if (!itemId || values.some(v => !Number.isInteger(v) || v < 0)) {
+        return json({ error:"invalid_limits_payload" }, { status:400 });
+      }
+
+      const updated = await env.DB.prepare(`
+        UPDATE request_items
+        SET max_per_request=?1,
+            max_per_business_day=?2,
+            max_per_stay=?3
+        WHERE id=?4
+      `).bind(values[0],values[1],values[2],itemId).run();
+
+      if (!updated.meta.changes) return json({ error:"request_item_not_found" }, { status:404 });
+
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+        VALUES (?1,'request_item_limits_updated','request_item',?2,?3)
+      `).bind(actor.id,itemId,JSON.stringify({
+        maxPerRequest:values[0],
+        maxPerBusinessDay:values[1],
+        maxPerStay:values[2]
+      })).run();
+
+      return json({ok:true});
+    }
+
+    if (url.pathname.match(/^\/api\/requests\/[^/]+$/) && request.method === "GET") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+
+      const requestId = url.pathname.split("/")[3] || "";
+      const detail = await env.DB.prepare(`
+        SELECT
+          sr.id, sr.status, sr.priority, sr.business_day, sr.note,
+          sr.requested_at, sr.delivered_at,
+          r.number AS room_number,
+          s.id AS stay_id, s.guest_name, s.guest_phone,
+          requester.name AS requested_by_name,
+          acknowledger.name AS acknowledged_by_name,
+          deliverer.name AS delivered_by_name
+        FROM service_requests sr
+        JOIN rooms r ON r.id=sr.room_id
+        JOIN stays s ON s.id=sr.stay_id
+        LEFT JOIN users requester ON requester.id=sr.requested_by
+        LEFT JOIN users acknowledger ON acknowledger.id=sr.acknowledged_by
+        LEFT JOIN users deliverer ON deliverer.id=sr.delivered_by
+        WHERE sr.id=?1
+        LIMIT 1
+      `).bind(requestId).first();
+
+      if (!detail) return json({ error:"request_not_found" }, { status:404 });
+
+      const [lines, approval] = await Promise.all([
+        env.DB.prepare(`
+          SELECT ri.name, ri.unit, srl.quantity
+          FROM service_request_lines srl
+          JOIN request_items ri ON ri.id=srl.item_id
+          WHERE srl.request_id=?1
+          ORDER BY ri.name
+        `).bind(requestId).all(),
+        env.DB.prepare(`
+          SELECT ar.reason, ar.status, ar.decision_note, ar.created_at, ar.decided_at,
+                 u.name AS decided_by_name
+          FROM approval_requests ar
+          LEFT JOIN users u ON u.id=ar.decided_by
+          WHERE ar.service_request_id=?1
+          ORDER BY ar.created_at DESC
+          LIMIT 1
+        `).bind(requestId).first()
+      ]);
+
+      return json({request:detail,lines:lines.results,approval:approval || null});
+    }
+
+    if (url.pathname.match(/^\/api\/stays\/[^/]+$/) && request.method === "GET") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+      if (actor.role !== "admin") return json({ error:"forbidden" }, { status:403 });
+
+      const stayId = url.pathname.split("/")[3] || "";
+      const stay = await env.DB.prepare(`
+        SELECT
+          s.id,s.guest_name,s.guest_phone,s.status,s.checkin_at,s.expected_checkout_at,s.actual_checkout_at,
+          r.number AS room_number,r.room_type,
+          u.name AS created_by_name
+        FROM stays s
+        JOIN rooms r ON r.id=s.room_id
+        LEFT JOIN users u ON u.id=s.created_by
+        WHERE s.id=?1
+        LIMIT 1
+      `).bind(stayId).first();
+
+      if (!stay) return json({ error:"stay_not_found" }, { status:404 });
+
+      const [extensions, requests] = await Promise.all([
+        env.DB.prepare(`
+          SELECT se.previous_checkout_at,se.new_checkout_at,se.reason,se.created_at,u.name AS changed_by_name
+          FROM stay_extensions se
+          LEFT JOIN users u ON u.id=se.changed_by
+          WHERE se.stay_id=?1
+          ORDER BY se.created_at DESC
+        `).bind(stayId).all(),
+        env.DB.prepare(`
+          SELECT sr.id,sr.status,sr.requested_at,sr.delivered_at,sr.note,
+                 GROUP_CONCAT(ri.name || ' × ' || srl.quantity, '، ') AS items
+          FROM service_requests sr
+          LEFT JOIN service_request_lines srl ON srl.request_id=sr.id
+          LEFT JOIN request_items ri ON ri.id=srl.item_id
+          WHERE sr.stay_id=?1
+          GROUP BY sr.id
+          ORDER BY sr.requested_at DESC
+        `).bind(stayId).all()
+      ]);
+
+      return json({stay,extensions:extensions.results,requests:requests.results});
+    }
+
     if (url.pathname === "/api/requests" && request.method === "GET") {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error:"unauthorized" }, { status:401 });
