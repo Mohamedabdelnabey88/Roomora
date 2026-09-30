@@ -68,7 +68,8 @@ export default function RequestsPanel() {
   const filtered=useMemo(()=>requests.filter(item=>{
     const q=query.trim();
     const text=(item.room_number+" "+item.guest_name+" "+item.items).toLowerCase();
-    const scopeMatch = scope==="all" || (scope==="active" ? !["delivered","cancelled"].includes(item.status) : ["delivered","cancelled"].includes(item.status));
+    const effectiveScope = q ? "all" : scope;
+    const scopeMatch = effectiveScope==="all" || (effectiveScope==="active" ? !["delivered","cancelled"].includes(item.status) : ["delivered","cancelled"].includes(item.status));
     return scopeMatch && (status==="all" || item.status===status) && (!q || text.includes(q.toLowerCase()));
   }),[requests,query,status,scope]);
 
@@ -103,6 +104,7 @@ export default function RequestsPanel() {
           <option value="cancelled">ملغي</option>
         </select></div>
       </div>
+      {query.trim() && <div className="search-scope-note">البحث الحالي يشمل كل سجل الطلبات، بما فيه الطلبات المسلّمة والملغاة.</div>}
 
       {loading ? <div className="rooms-state">جاري تحميل الطلبات…</div> :
       error ? <div className="rooms-state error">{error}</div> :
