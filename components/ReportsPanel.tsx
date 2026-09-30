@@ -1,7 +1,7 @@
 "use client";
 import { useEffect,useState } from "react";
 import Link from "next/link";
-import { ArrowRight,ChartBar,DoorOpen,ListChecks,Package,Users } from "@phosphor-icons/react";
+import { ArrowRight,ChartBar,DoorOpen,ListChecks,Package,Users,FilePdf } from "@phosphor-icons/react";
 
 type Summary={
   businessDay:string;
@@ -22,8 +22,8 @@ export default function ReportsPanel(){
     setData(p);
   })();},[]);
 
-  return <main className="settings-page">
-    <header className="settings-header"><div><Link href="/" className="back-link"><ArrowRight size={16}/> العودة للوحة التشغيل</Link><span className="section-kicker">OPERATIONS REPORTS</span><h1>التقارير التشغيلية</h1><p>مؤشرات الإشغال والإقامات وطلبات الغرف من البيانات الفعلية.</p></div></header>
+  return <main className="settings-page report-print-page">
+    <header className="settings-header"><div><Link href="/" className="back-link"><ArrowRight size={16}/> العودة للوحة التشغيل</Link><span className="section-kicker">OPERATIONS REPORTS</span><h1>التقارير التشغيلية</h1><p>مؤشرات الإشغال والإقامات وطلبات الغرف من البيانات الفعلية.</p></div><button className="primary-btn print-report-btn" onClick={()=>window.print()}><FilePdf size={18}/> حفظ التقرير PDF</button></header>
     {error?<div className="rooms-state error">{error}</div>:!data?<div className="rooms-state">جاري تحميل التقرير…</div>:<>
       <section className="request-kpis">
         <div><DoorOpen size={19}/><span>الغرف المشغولة</span><b>{data.roomStats.occupied_rooms||0}</b></div>
