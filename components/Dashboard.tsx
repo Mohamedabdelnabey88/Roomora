@@ -8,9 +8,10 @@ import {
   Gear, HouseLine, ListChecks, MagnifyingGlass, MoonStars, Package, Plus,
   ShieldCheck, SignOut, Sparkle, Users, X
 } from "@phosphor-icons/react";
-import { notifications, requests, fallbackRooms, mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
+import { notifications, fallbackRooms, mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
 import { getHotelBusinessDay } from "@/lib/business-day";
 import { CheckinDialog, ExtendStayDialog } from "@/components/StayDialogs";
+import RequestDialog from "@/components/RequestDialog";
 
 const labels = {
   available:"متاحة",
@@ -31,6 +32,10 @@ export default function Dashboard() {
   const [dataError, setDataError] = useState<string | null>(null);
   const [checkinRoom, setCheckinRoom] = useState<Room | null>(null);
   const [extendRoom, setExtendRoom] = useState<Room | null>(null);
+  const [requestRoom, setRequestRoom] = useState<Room | null>(null);
+  const [activeRequests, setActiveRequests] = useState<Array<{
+    id:string; room_number:string; guest_name:string; items:string; status:string; priority:string; requested_at:string;
+  }>>([]);
   const [actionError, setActionError] = useState("");
 
   async function loadRooms() {
@@ -49,7 +54,30 @@ export default function Dashboard() {
       .finally(() => setLoadingRooms(false));
   }
 
-  useEffect(() => { void loadRooms(); }, []);
+  async function loadRequests() {
+    const response = await fetch("/api/requests",{cache:"no-store"});
+    if (response.status === 401) { window.location.href="/login"; return; }
+    const payload = await response.json().catch(()=>[]);
+    setActiveRequests(Array.isArray(payload)?payload:[]);
+  }
+
+  useEffect(() => { void Promise.all([loadRooms(),loadRequests()]); }, []);
+
+  function requestAge(value:string) {
+    const mins=Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/60000));
+    if (mins<1) return "الآن";
+    if (mins<60) return "منذ "+mins+" د";
+    return "منذ "+Math.floor(mins/60)+" س";
+  }
+
+  const requestStatusLabel:Record<string,string>={
+    new:"جديد",
+    acknowledged:"تم الاستلام",
+    preparing:"جاري التجهيز",
+    approval_required:"بانتظار موافقة",
+    delivered:"تم التسليم",
+    cancelled:"ملغي"
+  };
 
   function formatStayDate(value?: string) {
     if (!value) return "—";
@@ -107,7 +135,7 @@ export default function Dashboard() {
       <nav>
         <button className="nav-item active"><HouseLine size={20}/> لوحة التشغيل</button>
         <button className="nav-item"><Bed size={20}/> الغرف والإقامات</button>
-        <button className="nav-item"><ListChecks size={20}/> طلبات الغرف {requests.length > 0 && <em>{requests.length}</em>}</button>
+        <button className="nav-item"><ListChecks size={20}/> طلبات الغرف {activeRequests.length > 0 && <em>{activeRequests.length}</em>}</button>
         <button className="nav-item"><Users size={20}/> النزلاء</button>
         <button className="nav-item"><Package size={20}/> المستهلكات</button>
         <button className="nav-item"><ChartBar size={20}/> التقارير</button>
@@ -217,11 +245,13 @@ export default function Dashboard() {
               <div><span className="section-kicker">SERVICE DESK</span><h2>الطلبات النشطة</h2></div>
               <button className="text-btn">عرض الكل</button>
             </div>
-            <div className="request-list">{requests.map(r=><div className="request-row" key={r.id}>
-              <div className={`request-icon ${r.level}`}><Bed size={18}/></div>
+            <div className="request-list">{activeRequests.length===0
+              ? <div className="requests-empty">لا توجد طلبات نشطة حاليًا.</div>
+              : activeRequests.map(r=><div className="request-row" key={r.id}>
+              <div className={`request-icon ${r.priority}`}><Bed size={18}/></div>
               <div className="request-info">
-                <div><b>غرفة {r.room}</b><span>{r.age}</span></div>
-                <p>{r.qty} × {r.item}</p><small>{r.status}</small>
+                <div><b>غرفة {r.room_number}</b><span>{requestAge(r.requested_at)}</span></div>
+                <p>{r.items || "طلب غرفة"}</p><small>{requestStatusLabel[r.status] || r.status}</small>
               </div>
             </div>)}</div>
           </div>
@@ -257,7 +287,7 @@ export default function Dashboard() {
             <div><span>مدة الإقامة</span><b>{selected.nights} ليالٍ</b></div>
             <div><span>يوم الفندق</span><b>{businessDay.label}</b></div>
           </div>
-          <button className="primary-btn full"><Plus size={18}/> إضافة طلب للغرفة</button>
+          <button className="primary-btn full" onClick={()=>setRequestRoom(selected)}><Plus size={18}/> إضافة طلب للغرفة</button>
           <button className="secondary-btn full" onClick={()=>setExtendRoom(selected)}>تمديد الإقامة</button>
           <button className="danger-ghost full" onClick={()=>void checkout(selected)}>تسجيل خروج النزيل</button>
         </> : <>
@@ -278,6 +308,16 @@ export default function Dashboard() {
       room={extendRoom}
       onClose={()=>setExtendRoom(null)}
       onSuccess={async()=>{ setSelected(null); await loadRooms(); }}
+    />
+    <RequestDialog
+      room={requestRoom}
+      onClose={()=>setRequestRoom(null)}
+      onSuccess={async(result)=>{
+        await loadRequests();
+        if (result.requiresApproval) {
+          setActionError("تم تسجيل الطلب وتحويله لموافقة الإدارة بسبب تجاوز أحد الحدود.");
+        }
+      }}
     />
   </div>
 }
