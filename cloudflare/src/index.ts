@@ -247,6 +247,164 @@ export default {
       return json({ ok: true });
     }
 
+    if (url.pathname === "/api/stays" && request.method === "POST") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error: "unauthorized" }, { status: 401 });
+
+      const body = await readJson<{
+        roomId?: string;
+        guestName?: string;
+        guestPhone?: string;
+        expectedCheckoutAt?: string;
+      }>(request);
+
+      const roomId = body?.roomId?.trim();
+      const guestName = body?.guestName?.trim();
+      const guestPhone = body?.guestPhone?.trim() || null;
+      const expectedCheckoutAt = body?.expectedCheckoutAt?.trim();
+
+      if (!roomId || !guestName || !expectedCheckoutAt) {
+        return json({ error: "invalid_checkin_payload" }, { status: 400 });
+      }
+
+      const room = await env.DB.prepare(`
+        SELECT id, number, operational_status
+        FROM rooms
+        WHERE id = ?1
+        LIMIT 1
+      `).bind(roomId).first<{ id:string; number:string; operational_status:string }>();
+
+      if (!room) return json({ error: "room_not_found" }, { status: 404 });
+      if (room.operational_status !== "available") {
+        return json({ error: "room_not_available" }, { status: 409 });
+      }
+
+      const existing = await env.DB.prepare(`
+        SELECT id FROM stays
+        WHERE room_id = ?1 AND status = 'in_house'
+        LIMIT 1
+      `).bind(roomId).first();
+
+      if (existing) return json({ error: "active_stay_exists" }, { status: 409 });
+
+      const now = new Date();
+      const checkout = new Date(expectedCheckoutAt);
+      if (!Number.isFinite(checkout.getTime()) || checkout.getTime() <= now.getTime()) {
+        return json({ error: "invalid_checkout_time" }, { status: 400 });
+      }
+
+      const stayId = crypto.randomUUID();
+      const checkinAt = now.toISOString();
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO stays (
+            id, room_id, guest_name, guest_phone, checkin_at,
+            expected_checkout_at, status, created_by
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'in_house', ?7)
+        `).bind(stayId, roomId, guestName, guestPhone, checkinAt, checkout.toISOString(), actor.id),
+        env.DB.prepare(`
+          UPDATE rooms
+          SET operational_status = 'occupied', updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?1
+        `).bind(roomId),
+        env.DB.prepare(`
+          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+          VALUES (?1, 'stay_checkin', 'stay', ?2, ?3)
+        `).bind(actor.id, stayId, JSON.stringify({ roomId, roomNumber: room.number }))
+      ]);
+
+      return json({
+        id: stayId,
+        roomId,
+        guestName,
+        guestPhone,
+        checkinAt,
+        expectedCheckoutAt: checkout.toISOString(),
+        status: "in_house"
+      }, { status: 201 });
+    }
+
+    if (url.pathname.match(/^\/api\/stays\/[^/]+\/extend$/) && request.method === "POST") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error: "unauthorized" }, { status: 401 });
+
+      const stayId = url.pathname.split("/")[3] || "";
+      const body = await readJson<{ expectedCheckoutAt?: string; reason?: string }>(request);
+      const newCheckout = body?.expectedCheckoutAt?.trim();
+      if (!stayId || !newCheckout) return json({ error: "invalid_extension_payload" }, { status: 400 });
+
+      const stay = await env.DB.prepare(`
+        SELECT id, room_id, expected_checkout_at
+        FROM stays
+        WHERE id = ?1 AND status = 'in_house'
+        LIMIT 1
+      `).bind(stayId).first<{ id:string; room_id:string; expected_checkout_at:string }>();
+
+      if (!stay) return json({ error: "active_stay_not_found" }, { status: 404 });
+
+      const next = new Date(newCheckout);
+      const previous = new Date(stay.expected_checkout_at);
+      if (!Number.isFinite(next.getTime()) || next.getTime() <= previous.getTime()) {
+        return json({ error: "extension_must_be_later" }, { status: 400 });
+      }
+
+      const extensionId = crypto.randomUUID();
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO stay_extensions (
+            id, stay_id, previous_checkout_at, new_checkout_at, reason, changed_by
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        `).bind(extensionId, stayId, stay.expected_checkout_at, next.toISOString(), body?.reason?.trim() || null, actor.id),
+        env.DB.prepare(`
+          UPDATE stays
+          SET expected_checkout_at = ?1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?2
+        `).bind(next.toISOString(), stayId),
+        env.DB.prepare(`
+          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+          VALUES (?1, 'stay_extended', 'stay', ?2, ?3)
+        `).bind(actor.id, stayId, JSON.stringify({ previous: stay.expected_checkout_at, next: next.toISOString() }))
+      ]);
+
+      return json({ ok: true, expectedCheckoutAt: next.toISOString() });
+    }
+
+    if (url.pathname.match(/^\/api\/stays\/[^/]+\/checkout$/) && request.method === "POST") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error: "unauthorized" }, { status: 401 });
+
+      const stayId = url.pathname.split("/")[3] || "";
+      const stay = await env.DB.prepare(`
+        SELECT id, room_id
+        FROM stays
+        WHERE id = ?1 AND status = 'in_house'
+        LIMIT 1
+      `).bind(stayId).first<{ id:string; room_id:string }>();
+
+      if (!stay) return json({ error: "active_stay_not_found" }, { status: 404 });
+
+      const actualCheckoutAt = new Date().toISOString();
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE stays
+          SET status = 'checked_out', actual_checkout_at = ?1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?2
+        `).bind(actualCheckoutAt, stayId),
+        env.DB.prepare(`
+          UPDATE rooms
+          SET operational_status = 'available', updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?1
+        `).bind(stay.room_id),
+        env.DB.prepare(`
+          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+          VALUES (?1, 'stay_checkout', 'stay', ?2, ?3)
+        `).bind(actor.id, stayId, JSON.stringify({ roomId: stay.room_id, actualCheckoutAt }))
+      ]);
+
+      return json({ ok: true, actualCheckoutAt });
+    }
+
     if (url.pathname === "/api/admin/users" && request.method === "GET") {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error: "unauthorized" }, { status: 401 });
@@ -350,9 +508,22 @@ export default {
       if (!user) return json({ error: "unauthorized" }, { status: 401 });
 
       const result = await env.DB.prepare(`
-        SELECT id, number, floor, room_type, operational_status
-        FROM rooms
-        ORDER BY floor, CASE WHEN number GLOB '[0-9]*' THEN CAST(number AS INTEGER) ELSE 0 END, number
+        SELECT
+          r.id,
+          r.number,
+          r.floor,
+          r.room_type,
+          r.operational_status,
+          s.id AS stay_id,
+          s.guest_name,
+          s.guest_phone,
+          s.checkin_at,
+          s.expected_checkout_at
+        FROM rooms r
+        LEFT JOIN stays s
+          ON s.room_id = r.id
+         AND s.status = 'in_house'
+        ORDER BY r.floor, CASE WHEN r.number GLOB '[0-9]*' THEN CAST(r.number AS INTEGER) ELSE 0 END, r.number
       `).all();
       return json(result.results);
     }
