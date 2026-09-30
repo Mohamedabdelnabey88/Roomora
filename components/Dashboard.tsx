@@ -47,7 +47,9 @@ export default function Dashboard() {
         return res.json() as Promise<ApiRoom[]>;
       })
       .then((payload) => {
-        setRooms(payload.map(mapApiRoom));
+        const mapped = payload.map(mapApiRoom);
+        setRooms(mapped);
+        setSelected(prev => prev ? (mapped.find(room => room.id === prev.id) || null) : null);
         setDataError(null);
       })
       .catch(() => setDataError("تعذر الاتصال بقاعدة بيانات الفندق"))
@@ -139,7 +141,13 @@ export default function Dashboard() {
     const response = await fetch("/api/stays/" + encodeURIComponent(room.stayId) + "/checkout", { method:"POST" });
     const payload = await response.json().catch(()=>({}));
     if (!response.ok) {
-      setActionError(payload.error === "active_stay_not_found" ? "الإقامة لم تعد نشطة" : "تعذر تسجيل الخروج");
+      if (payload.error === "active_stay_not_found") {
+        setActionError("الإقامة لم تعد نشطة");
+      } else if (payload.error === "open_requests_exist") {
+        setActionError("لا يمكن تسجيل الخروج قبل إغلاق الطلبات النشطة للغرفة (" + String(payload.count || 0) + ").");
+      } else {
+        setActionError("تعذر تسجيل الخروج");
+      }
       return;
     }
     setSelected(null);
