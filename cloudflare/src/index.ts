@@ -631,6 +631,15 @@ export default {
       if (!current) return json({ error:"request_not_found" }, { status:404 });
       if (current.status === "approval_required") return json({ error:"approval_required" }, { status:409 });
 
+      const transitions:Record<string,string[]> = {
+        new:["acknowledged","cancelled"],
+        acknowledged:["preparing","delivered","cancelled"],
+        preparing:["delivered","cancelled"]
+      };
+      if (!(transitions[current.status] || []).includes(next)) {
+        return json({ error:"invalid_status_transition", from:current.status, to:next }, { status:409 });
+      }
+
       const deliveredAt = next === "delivered" ? new Date().toISOString() : null;
       await env.DB.batch([
         env.DB.prepare(`
