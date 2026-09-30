@@ -13,6 +13,7 @@ import { getHotelBusinessDay } from "@/lib/business-day";
 import { CheckinDialog, ExtendStayDialog } from "@/components/StayDialogs";
 import RequestDialog from "@/components/RequestDialog";
 import RequestActions, { type ActiveRequest } from "@/components/RequestActions";
+import { notifyOperationsChanged, subscribeOperationsChanged } from "@/lib/operations-events";
 
 const labels = {
   available:"متاحة",
@@ -77,7 +78,11 @@ export default function Dashboard() {
   useEffect(() => {
     void Promise.all([loadRooms(),loadRequests(),loadCurrentUser()]);
     const timer = window.setInterval(() => { void refreshOperations(); }, 30000);
-    return () => window.clearInterval(timer);
+    const unsubscribe = subscribeOperationsChanged(()=>{ void refreshOperations(); });
+    return () => {
+      window.clearInterval(timer);
+      unsubscribe();
+    };
   }, []);
 
   function requestAgeMinutes(value:string) {
@@ -151,7 +156,8 @@ export default function Dashboard() {
       return;
     }
     setSelected(null);
-    await loadRooms();
+    notifyOperationsChanged();
+    await refreshOperations();
   }
 
   const filtered = useMemo(
@@ -349,17 +355,18 @@ export default function Dashboard() {
     <CheckinDialog
       room={checkinRoom}
       onClose={()=>setCheckinRoom(null)}
-      onSuccess={async()=>{ setSelected(null); await loadRooms(); }}
+      onSuccess={async()=>{ setSelected(null); notifyOperationsChanged(); await refreshOperations(); }}
     />
     <ExtendStayDialog
       room={extendRoom}
       onClose={()=>setExtendRoom(null)}
-      onSuccess={async()=>{ setSelected(null); await loadRooms(); }}
+      onSuccess={async()=>{ setSelected(null); notifyOperationsChanged(); await refreshOperations(); }}
     />
     <RequestDialog
       room={requestRoom}
       onClose={()=>setRequestRoom(null)}
       onSuccess={async(result)=>{
+        notifyOperationsChanged();
         await refreshOperations();
         if (result.requiresApproval) {
           setActionError("تم تسجيل الطلب وتحويله لموافقة الإدارة بسبب تجاوز أحد الحدود.");
