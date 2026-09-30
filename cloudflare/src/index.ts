@@ -94,6 +94,35 @@ async function readJson<T>(request: Request): Promise<T | null> {
   try { return await request.json() as T; } catch { return null; }
 }
 
+async function hotelBusinessDay(env: Env, at = new Date()) {
+  const settings = await env.DB.prepare(`
+    SELECT timezone, business_day_start FROM hotel_settings WHERE id = 1
+  `).first<{ timezone:string; business_day_start:string }>();
+
+  const timezone = settings?.timezone || "Asia/Riyadh";
+  const cutoff = settings?.business_day_start || "06:00";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(at);
+
+  const read = (type:string) => parts.find(p=>p.type===type)?.value || "00";
+  const localDate = read("year")+"-"+read("month")+"-"+read("day");
+  const minutes = Number(read("hour"))*60 + Number(read("minute"));
+  const [cutHour, cutMinute] = cutoff.split(":").map(Number);
+  if (minutes >= cutHour*60 + cutMinute) return localDate;
+
+  const anchor = new Date(localDate+"T12:00:00Z");
+  anchor.setUTCDate(anchor.getUTCDate()-1);
+  return anchor.toISOString().slice(0,10);
+}
+
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -403,6 +432,257 @@ export default {
       ]);
 
       return json({ ok: true, actualCheckoutAt });
+    }
+
+    if (url.pathname === "/api/request-items" && request.method === "GET") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+
+      const result = await env.DB.prepare(`
+        SELECT id, name, unit, max_per_request, max_per_business_day, max_per_stay
+        FROM request_items
+        WHERE active = 1
+        ORDER BY name
+      `).all();
+
+      return json(result.results);
+    }
+
+    if (url.pathname === "/api/requests" && request.method === "GET") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+
+      const result = await env.DB.prepare(`
+        SELECT
+          sr.id,
+          sr.stay_id,
+          sr.room_id,
+          sr.status,
+          sr.priority,
+          sr.business_day,
+          sr.requested_at,
+          sr.delivered_at,
+          r.number AS room_number,
+          s.guest_name,
+          GROUP_CONCAT(ri.name || ' × ' || srl.quantity, '، ') AS items
+        FROM service_requests sr
+        JOIN rooms r ON r.id = sr.room_id
+        JOIN stays s ON s.id = sr.stay_id
+        LEFT JOIN service_request_lines srl ON srl.request_id = sr.id
+        LEFT JOIN request_items ri ON ri.id = srl.item_id
+        WHERE sr.status NOT IN ('delivered','cancelled')
+        GROUP BY sr.id
+        ORDER BY sr.requested_at ASC
+        LIMIT 100
+      `).all();
+
+      return json(result.results);
+    }
+
+    if (url.pathname === "/api/requests" && request.method === "POST") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+
+      const body = await readJson<{
+        stayId?:string;
+        lines?:Array<{ itemId?:string; quantity?:number }>;
+        note?:string;
+      }>(request);
+
+      const stayId = body?.stayId?.trim();
+      const lines = (body?.lines || [])
+        .map(line=>({ itemId:line.itemId?.trim() || "", quantity:Number(line.quantity || 0) }))
+        .filter(line=>line.itemId && Number.isInteger(line.quantity) && line.quantity > 0);
+
+      if (!stayId || lines.length === 0) return json({ error:"invalid_request_payload" }, { status:400 });
+
+      const stay = await env.DB.prepare(`
+        SELECT s.id, s.room_id, r.number AS room_number
+        FROM stays s
+        JOIN rooms r ON r.id = s.room_id
+        WHERE s.id = ?1 AND s.status = 'in_house'
+        LIMIT 1
+      `).bind(stayId).first<{ id:string; room_id:string; room_number:string }>();
+
+      if (!stay) return json({ error:"active_stay_not_found" }, { status:404 });
+
+      const businessDay = await hotelBusinessDay(env);
+      const violations:string[] = [];
+      const validated:Array<{itemId:string;quantity:number;name:string}> = [];
+
+      for (const line of lines) {
+        const item = await env.DB.prepare(`
+          SELECT id, name, max_per_request, max_per_business_day, max_per_stay
+          FROM request_items
+          WHERE id = ?1 AND active = 1
+          LIMIT 1
+        `).bind(line.itemId).first<{
+          id:string; name:string;
+          max_per_request:number|null;
+          max_per_business_day:number|null;
+          max_per_stay:number|null;
+        }>();
+
+        if (!item) return json({ error:"request_item_not_found", itemId:line.itemId }, { status:404 });
+
+        if (item.max_per_request !== null && line.quantity > item.max_per_request) {
+          violations.push(item.name + ": تجاوز حد الطلب الواحد");
+        }
+
+        const dayUsage = await env.DB.prepare(`
+          SELECT COALESCE(SUM(srl.quantity),0) AS qty
+          FROM service_request_lines srl
+          JOIN service_requests sr ON sr.id = srl.request_id
+          WHERE sr.stay_id = ?1
+            AND sr.business_day = ?2
+            AND srl.item_id = ?3
+            AND sr.status NOT IN ('cancelled')
+        `).bind(stayId,businessDay,line.itemId).first<{qty:number}>();
+
+        const stayUsage = await env.DB.prepare(`
+          SELECT COALESCE(SUM(srl.quantity),0) AS qty
+          FROM service_request_lines srl
+          JOIN service_requests sr ON sr.id = srl.request_id
+          WHERE sr.stay_id = ?1
+            AND srl.item_id = ?2
+            AND sr.status NOT IN ('cancelled')
+        `).bind(stayId,line.itemId).first<{qty:number}>();
+
+        if (item.max_per_business_day !== null && Number(dayUsage?.qty || 0) + line.quantity > item.max_per_business_day) {
+          violations.push(item.name + ": تجاوز الحد اليومي");
+        }
+        if (item.max_per_stay !== null && Number(stayUsage?.qty || 0) + line.quantity > item.max_per_stay) {
+          violations.push(item.name + ": تجاوز حد الإقامة");
+        }
+
+        validated.push({ itemId:item.id, quantity:line.quantity, name:item.name });
+      }
+
+      const requestId = crypto.randomUUID();
+      const requiresApproval = violations.length > 0;
+      const statements:D1PreparedStatement[] = [
+        env.DB.prepare(`
+          INSERT INTO service_requests (
+            id, stay_id, room_id, status, priority, business_day, requested_by, note
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        `).bind(
+          requestId,
+          stayId,
+          stay.room_id,
+          requiresApproval ? "approval_required" : "new",
+          requiresApproval ? "warning" : "normal",
+          businessDay,
+          actor.id,
+          body?.note?.trim() || null
+        )
+      ];
+
+      for (const line of validated) {
+        statements.push(env.DB.prepare(`
+          INSERT INTO service_request_lines (id, request_id, item_id, quantity)
+          VALUES (?1, ?2, ?3, ?4)
+        `).bind(crypto.randomUUID(),requestId,line.itemId,line.quantity));
+      }
+
+      if (requiresApproval) {
+        statements.push(env.DB.prepare(`
+          INSERT INTO approval_requests (id, service_request_id, reason, status)
+          VALUES (?1, ?2, ?3, 'pending')
+        `).bind(crypto.randomUUID(),requestId,violations.join(" | ")));
+      }
+
+      statements.push(env.DB.prepare(`
+        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+        VALUES (?1, 'service_request_created', 'service_request', ?2, ?3)
+      `).bind(actor.id,requestId,JSON.stringify({
+        roomNumber:stay.room_number,
+        businessDay,
+        requiresApproval,
+        violations
+      })));
+
+      await env.DB.batch(statements);
+
+      return json({
+        id:requestId,
+        status:requiresApproval ? "approval_required" : "new",
+        requiresApproval,
+        violations
+      },{status:201});
+    }
+
+    if (url.pathname.match(/^\/api\/requests\/[^/]+\/status$/) && request.method === "PATCH") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+
+      const requestId = url.pathname.split("/")[3] || "";
+      const body = await readJson<{status?:string}>(request);
+      const next = body?.status || "";
+      const allowed = ["acknowledged","preparing","delivered","cancelled"];
+      if (!allowed.includes(next)) return json({ error:"invalid_request_status" }, { status:400 });
+
+      const current = await env.DB.prepare(`
+        SELECT id,status FROM service_requests WHERE id = ?1 LIMIT 1
+      `).bind(requestId).first<{id:string;status:string}>();
+      if (!current) return json({ error:"request_not_found" }, { status:404 });
+      if (current.status === "approval_required") return json({ error:"approval_required" }, { status:409 });
+
+      const deliveredAt = next === "delivered" ? new Date().toISOString() : null;
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE service_requests
+          SET status = ?1,
+              acknowledged_by = CASE WHEN ?1 IN ('acknowledged','preparing') AND acknowledged_by IS NULL THEN ?2 ELSE acknowledged_by END,
+              delivered_by = CASE WHEN ?1 = 'delivered' THEN ?2 ELSE delivered_by END,
+              delivered_at = CASE WHEN ?1 = 'delivered' THEN ?3 ELSE delivered_at END
+          WHERE id = ?4
+        `).bind(next,actor.id,deliveredAt,requestId),
+        env.DB.prepare(`
+          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+          VALUES (?1, 'service_request_status_changed', 'service_request', ?2, ?3)
+        `).bind(actor.id,requestId,JSON.stringify({from:current.status,to:next}))
+      ]);
+
+      return json({ok:true,status:next});
+    }
+
+    if (url.pathname.match(/^\/api\/requests\/[^/]+\/decision$/) && request.method === "POST") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+      if (actor.role !== "admin") return json({ error:"forbidden" }, { status:403 });
+
+      const requestId = url.pathname.split("/")[3] || "";
+      const body = await readJson<{decision?:"approved"|"rejected";note?:string}>(request);
+      if (!body?.decision || !["approved","rejected"].includes(body.decision)) {
+        return json({ error:"invalid_decision" }, { status:400 });
+      }
+
+      const approval = await env.DB.prepare(`
+        SELECT id,status FROM approval_requests
+        WHERE service_request_id = ?1 AND status = 'pending'
+        LIMIT 1
+      `).bind(requestId).first<{id:string;status:string}>();
+      if (!approval) return json({ error:"pending_approval_not_found" }, { status:404 });
+
+      const requestStatus = body.decision === "approved" ? "new" : "cancelled";
+      const now = new Date().toISOString();
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE approval_requests
+          SET status = ?1, decided_by = ?2, decision_note = ?3, decided_at = ?4
+          WHERE id = ?5
+        `).bind(body.decision,actor.id,body.note?.trim() || null,now,approval.id),
+        env.DB.prepare(`
+          UPDATE service_requests SET status = ?1 WHERE id = ?2
+        `).bind(requestStatus,requestId),
+        env.DB.prepare(`
+          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+          VALUES (?1, 'service_request_decision', 'service_request', ?2, ?3)
+        `).bind(actor.id,requestId,JSON.stringify({decision:body.decision}))
+      ]);
+
+      return json({ok:true,status:requestStatus});
     }
 
     if (url.pathname === "/api/admin/users" && request.method === "GET") {
