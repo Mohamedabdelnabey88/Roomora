@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CalendarBlank, Phone, User, X } from "@phosphor-icons/react";
 import type { Room } from "@/lib/data";
@@ -31,6 +31,15 @@ export function CheckinDialog({
   const [checkout,setCheckout]=useState(defaultCheckout);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
+
+  useEffect(()=>{
+    if (!room) return;
+    setGuestName("");
+    setGuestPhone("");
+    setCheckout(defaultCheckout());
+    setLoading(false);
+    setError("");
+  },[room?.id]);
 
   if (!room) return null;
 
@@ -106,6 +115,14 @@ export function ExtendStayDialog({
   const [reason,setReason]=useState("");
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
+
+  useEffect(()=>{
+    if (!room?.stayId) return;
+    setCheckout(initial);
+    setReason("");
+    setLoading(false);
+    setError("");
+  },[room?.stayId, initial]);
 
   if (!room?.stayId) return null;
 
