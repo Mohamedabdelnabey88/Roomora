@@ -21,11 +21,12 @@ export default function RequestsPanel() {
   const [error,setError]=useState("");
   const [query,setQuery]=useState("");
   const [status,setStatus]=useState("all");
+  const [scope,setScope]=useState("active");
 
   async function load() {
     setLoading(true);
     const [requestResponse,userResponse]=await Promise.all([
-      fetch("/api/requests",{cache:"no-store"}),
+      fetch("/api/requests?scope=all",{cache:"no-store"}),
       fetch("/api/auth/me",{cache:"no-store"})
     ]);
     if (requestResponse.status===401 || userResponse.status===401) { window.location.href="/login"; return; }
@@ -67,8 +68,9 @@ export default function RequestsPanel() {
   const filtered=useMemo(()=>requests.filter(item=>{
     const q=query.trim();
     const text=(item.room_number+" "+item.guest_name+" "+item.items).toLowerCase();
-    return (status==="all" || item.status===status) && (!q || text.includes(q.toLowerCase()));
-  }),[requests,query,status]);
+    const scopeMatch = scope==="all" || (scope==="active" ? !["delivered","cancelled"].includes(item.status) : ["delivered","cancelled"].includes(item.status));
+    return scopeMatch && (status==="all" || item.status===status) && (!q || text.includes(q.toLowerCase()));
+  }),[requests,query,status,scope]);
 
   return <main className="settings-page requests-page">
     <header className="settings-header">
@@ -89,12 +91,16 @@ export default function RequestsPanel() {
     <section className="panel requests-directory">
       <div className="directory-toolbar">
         <div className="search wide"><MagnifyingGlass size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="ابحث بالغرفة أو النزيل أو الصنف"/></div>
-        <div className="filter-select"><Funnel size={16}/><select value={status} onChange={e=>setStatus(e.target.value)}>
-          <option value="all">كل الحالات النشطة</option>
+        <div className="filter-select"><Funnel size={16}/><select value={scope} onChange={e=>setScope(e.target.value)}>
+          <option value="active">الطلبات النشطة</option><option value="completed">المكتملة والملغاة</option><option value="all">كل السجل</option>
+        </select><select value={status} onChange={e=>setStatus(e.target.value)}>
+          <option value="all">كل الحالات</option>
           <option value="new">جديد</option>
           <option value="acknowledged">تم الاستلام</option>
           <option value="preparing">جاري التجهيز</option>
           <option value="approval_required">بانتظار موافقة</option>
+          <option value="delivered">تم التسليم</option>
+          <option value="cancelled">ملغي</option>
         </select></div>
       </div>
 
