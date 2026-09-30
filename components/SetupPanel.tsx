@@ -43,7 +43,11 @@ export default function SetupPanel() {
         setup_already_completed:"تم إنشاء حساب الإدارة بالفعل",
         invalid_setup_payload:"أدخل البيانات كاملة وكلمة مرور لا تقل عن 10 أحرف"
       };
-      setError(map[payload.error] || "تعذر إنشاء حساب الإدارة");
+      if (payload.error === "setup_internal_error") {
+        setError(`فشل الإعداد في المرحلة: ${payload.stage || "unknown"}`);
+      } else {
+        setError(map[payload.error] || `تعذر إنشاء حساب الإدارة${payload.error ? ` (${payload.error})` : ""}`);
+      }
       setLoading(false);
       return;
     }
