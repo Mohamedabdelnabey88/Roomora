@@ -4,7 +4,7 @@ const publicPaths = ["/login", "/setup"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (pathname.startsWith("/_next") || pathname.startsWith("/api/auth") || pathname === "/favicon.ico") {
+  if (pathname.startsWith("/_next") || pathname.startsWith("/api/auth") || pathname.startsWith("/api/setup") || pathname === "/favicon.ico") {
     return NextResponse.next();
   }
 
