@@ -286,23 +286,60 @@ export default function Dashboard() {
           <motion.div layout className="room-grid">
             {loadingRooms && <div className="rooms-state">جاري تحميل الغرف من Cloudflare D1…</div>}
             {!loadingRooms && dataError && <div className="rooms-state error">{dataError}</div>}
-            {!loadingRooms && !dataError && filtered.map((room,idx)=><motion.button
+            {!loadingRooms && !dataError && filtered.map((room,idx)=><motion.article
               layout
-              initial={{opacity:0,y:8}}
+              initial={{opacity:0,y:10}}
               animate={{opacity:1,y:0}}
-              transition={{delay:Math.min(idx*.012,.2)}}
+              transition={{delay:Math.min(idx*.01,.16)}}
               key={room.number}
-              className={`room-card ${room.status}`}
+              className={`room-card room-card-pro ${room.status}`}
               onClick={()=>setSelected(room)}
             >
-              <div className="room-top"><b>{room.number}</b><span>{labels[room.status]}</span></div>
-              <small>{room.type}</small>
-              <div className="room-meta">
-                {room.guest
-                  ? <><p>{room.guest}</p><span>{room.nights} {room.nights===1?"ليلة":"ليالٍ"}{room.openRequests ? ` · ${room.openRequests} طلب` : ""}</span></>
-                  : <><p>جاهزة للاستقبال</p><span>لا توجد إقامة حالية</span></>}
+              <div className="room-card-head">
+                <div className="room-number-block">
+                  <span>غرفة</span>
+                  <b>{room.number}</b>
+                </div>
+                <span className={`room-status-chip ${room.status}`}>
+                  <i className={`status-dot ${room.status}`}/>
+                  {labels[room.status]}
+                </span>
               </div>
-            </motion.button>)}
+
+              <div className="room-type-row"><Bed size={15}/><span>{room.type}</span></div>
+
+              {room.guest ? (
+                <div className="room-occupancy guest">
+                  <div className="room-avatar">{room.guest.trim().charAt(0)}</div>
+                  <div>
+                    <span>النزيل الحالي</span>
+                    <b>{room.guest}</b>
+                    <small>{room.nights} {room.nights===1?"ليلة":"ليالٍ"}{room.openRequests ? ` · ${room.openRequests} طلب مفتوح` : ""}</small>
+                  </div>
+                </div>
+              ) : (
+                <div className="room-occupancy vacant">
+                  <CheckCircle size={20} weight="fill"/>
+                  <div><b>جاهزة للتسكين</b><span>لا توجد إقامة نشطة</span></div>
+                </div>
+              )}
+
+              <div className="room-quick-actions">
+                <button type="button" className="room-action subtle" onClick={e=>{e.stopPropagation();setSelected(room);}}>
+                  التفاصيل
+                </button>
+                {!room.guest && room.status==="available" && (
+                  <button type="button" className="room-action primary" onClick={e=>{e.stopPropagation();setCheckinRoom(room);}}>
+                    <DoorOpen size={14}/> تسكين
+                  </button>
+                )}
+                {room.guest && (
+                  <button type="button" className="room-action primary" onClick={e=>{e.stopPropagation();setRequestRoom(room);}}>
+                    <Plus size={14}/> طلب
+                  </button>
+                )}
+              </div>
+            </motion.article>)}
           </motion.div>
         </div>
 
