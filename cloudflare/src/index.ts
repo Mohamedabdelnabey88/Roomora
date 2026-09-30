@@ -149,6 +149,45 @@ export default {
       }
     }
 
+    if (url.pathname === "/api/setup/reset-admin" && request.method === "POST") {
+      if (!env.SETUP_KEY) return json({ error: "setup_disabled" }, { status: 503 });
+      if (request.headers.get("x-setup-key") !== env.SETUP_KEY) return json({ error: "forbidden" }, { status: 403 });
+
+      try {
+        const body = await readJson<{ username?: string; password?: string }>(request);
+        const username = body?.username?.trim().toLowerCase();
+        const password = body?.password || "";
+        if (!username || password.length < 10) return json({ error: "invalid_reset_payload" }, { status: 400 });
+
+        const admin = await env.DB.prepare(`
+          SELECT id, username FROM users
+          WHERE username = ?1 AND role = 'admin'
+          LIMIT 1
+        `).bind(username).first<{ id: string; username: string }>();
+
+        if (!admin) return json({ error: "admin_not_found" }, { status: 404 });
+
+        const passwordHash = await hashPassword(password);
+        await env.DB.prepare(`
+          UPDATE users
+          SET password_hash = ?1, active = 1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?2
+        `).bind(passwordHash, admin.id).run();
+
+        await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?1").bind(admin.id).run();
+
+        await env.DB.prepare(`
+          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+          VALUES (?1, 'admin_password_reset_via_setup_key', 'user', ?1, '{"source":"setup_recovery"}')
+        `).bind(admin.id).run();
+
+        return json({ ok: true });
+      } catch (error) {
+        console.error("reset_admin_failed", error instanceof Error ? error.message : String(error));
+        return json({ error: "reset_internal_error" }, { status: 500 });
+      }
+    }
+
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
       const body = await readJson<{ username?: string; password?: string }>(request);
       const username = body?.username?.trim().toLowerCase();
