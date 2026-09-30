@@ -12,6 +12,7 @@ import { notifications, fallbackRooms, mapApiRoom, type ApiRoom, type Room } fro
 import { getHotelBusinessDay } from "@/lib/business-day";
 import { CheckinDialog, ExtendStayDialog } from "@/components/StayDialogs";
 import RequestDialog from "@/components/RequestDialog";
+import RequestActions, { type ActiveRequest } from "@/components/RequestActions";
 
 const labels = {
   available:"متاحة",
@@ -33,9 +34,8 @@ export default function Dashboard() {
   const [checkinRoom, setCheckinRoom] = useState<Room | null>(null);
   const [extendRoom, setExtendRoom] = useState<Room | null>(null);
   const [requestRoom, setRequestRoom] = useState<Room | null>(null);
-  const [activeRequests, setActiveRequests] = useState<Array<{
-    id:string; room_number:string; guest_name:string; items:string; status:string; priority:string; requested_at:string;
-  }>>([]);
+  const [activeRequests, setActiveRequests] = useState<ActiveRequest[]>([]);
+  const [currentUser, setCurrentUser] = useState<{name:string;role:"admin"|"reception"}|null>(null);
   const [actionError, setActionError] = useState("");
 
   async function loadRooms() {
@@ -61,10 +61,25 @@ export default function Dashboard() {
     setActiveRequests(Array.isArray(payload)?payload:[]);
   }
 
-  useEffect(() => { void Promise.all([loadRooms(),loadRequests()]); }, []);
+  async function loadCurrentUser() {
+    const response = await fetch("/api/auth/me",{cache:"no-store"});
+    if (response.status === 401) { window.location.href="/login"; return; }
+    const payload = await response.json().catch(()=>null);
+    if (payload?.user) setCurrentUser({name:payload.user.name,role:payload.user.role});
+  }
+
+  async function refreshOperations() {
+    await Promise.all([loadRooms(),loadRequests()]);
+  }
+
+  useEffect(() => { void Promise.all([loadRooms(),loadRequests(),loadCurrentUser()]); }, []);
+
+  function requestAgeMinutes(value:string) {
+    return Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/60000));
+  }
 
   function requestAge(value:string) {
-    const mins=Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/60000));
+    const mins=requestAgeMinutes(value);
     if (mins<1) return "الآن";
     if (mins<60) return "منذ "+mins+" د";
     return "منذ "+Math.floor(mins/60)+" س";
@@ -150,8 +165,8 @@ export default function Dashboard() {
       </div>
 
       <div className="user-card">
-        <div className="avatar">م</div>
-        <div><b>مدير الفندق</b><span>Administrator</span></div>
+        <div className="avatar">{(currentUser?.name || "م").slice(0,1)}</div>
+        <div><b>{currentUser?.name || "مستخدم Roomora"}</b><span>{currentUser?.role==="admin"?"Administrator":"Reception"}</span></div>
         <button className="logout-icon" onClick={async()=>{ await fetch("/api/auth/logout",{method:"POST"}); window.location.href="/login"; }} aria-label="تسجيل الخروج"><SignOut size={18}/></button>
       </div>
     </aside>
@@ -248,10 +263,13 @@ export default function Dashboard() {
             <div className="request-list">{activeRequests.length===0
               ? <div className="requests-empty">لا توجد طلبات نشطة حاليًا.</div>
               : activeRequests.map(r=><div className="request-row" key={r.id}>
-              <div className={`request-icon ${r.priority}`}><Bed size={18}/></div>
+              <div className={`request-icon ${requestAgeMinutes(r.requested_at)>=25?"critical":requestAgeMinutes(r.requested_at)>=15?"warning":r.priority}`}><Bed size={18}/></div>
               <div className="request-info">
                 <div><b>غرفة {r.room_number}</b><span>{requestAge(r.requested_at)}</span></div>
-                <p>{r.items || "طلب غرفة"}</p><small>{requestStatusLabel[r.status] || r.status}</small>
+                <p>{r.items || "طلب غرفة"}</p>
+                <small>{requestStatusLabel[r.status] || r.status}</small>
+                {r.approval_reason && <div className="approval-reason">{r.approval_reason}</div>}
+                <RequestActions request={r} role={currentUser?.role || null} onChanged={refreshOperations}/>
               </div>
             </div>)}</div>
           </div>
@@ -313,7 +331,7 @@ export default function Dashboard() {
       room={requestRoom}
       onClose={()=>setRequestRoom(null)}
       onSuccess={async(result)=>{
-        await loadRequests();
+        await refreshOperations();
         if (result.requiresApproval) {
           setActionError("تم تسجيل الطلب وتحويله لموافقة الإدارة بسبب تجاوز أحد الحدود.");
         }
