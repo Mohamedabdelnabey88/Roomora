@@ -1,0 +1,15 @@
+{
+  "name": "roomora-cloudflare-api",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply roomora-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply roomora-db --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260930.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.144.0"
+  }
+}
