@@ -1,4 +1,4 @@
-name = "roomora-api"
+name = "roomora"
 main = "src/index.ts"
 compatibility_date = "2026-09-30"
 
@@ -6,3 +6,6 @@ compatibility_date = "2026-09-30"
 binding = "DB"
 database_name = "roomora-db"
 database_id = "a7650d31-f183-4869-8d09-bf81fc16bdf8"
+
+[observability]
+enabled = true
