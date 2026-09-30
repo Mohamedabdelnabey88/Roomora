@@ -8,10 +8,13 @@ async function session() {
   return jar.get("roomora_session")?.value || "";
 }
 
-export async function GET() {
+export async function GET(request:Request) {
   const token = await session();
   if (!token) return NextResponse.json({error:"unauthorized"},{status:401});
-  const response = await fetch(API_BASE + "/api/requests", {
+  const incoming=new URL(request.url);
+  const target=new URL(API_BASE+"/api/requests");
+  incoming.searchParams.forEach((value,key)=>target.searchParams.set(key,value));
+  const response = await fetch(target.toString(), {
     headers:{authorization:"Bearer " + token},
     cache:"no-store"
   });
