@@ -13,6 +13,7 @@ type Detail={
   };
   lines:Array<{name:string;unit:string;quantity:number}>;
   approval?:{reason:string;status:string;decision_note?:string|null;created_at:string;decided_at?:string|null;decided_by_name?:string|null}|null;
+  timeline:Array<{action:string;metadata_json?:string|null;created_at:string;actor_name?:string|null}>;
 };
 
 const statusLabel:Record<string,string>={
@@ -62,6 +63,18 @@ export default function RequestDetailDialog({requestId,onClose}:{requestId:strin
           <div className="detail-lines">{data.lines.map((l,i)=><div key={i}><b>{l.name}</b><span>{l.quantity} {l.unit}</span></div>)}</div>
         </div>
         {data.request.note&&<div className="detail-section"><h3>ملاحظة الطلب</h3><p className="detail-note">{data.request.note}</p></div>}
+        <div className="detail-section"><h3><Clock size={16}/> سجل الإجراءات</h3>
+          {data.timeline?.length ? <div className="timeline-list">{data.timeline.map((event,i)=>{
+            let label=event.action;
+            try{
+              const meta=event.metadata_json?JSON.parse(event.metadata_json):null;
+              if(event.action==="service_request_created") label="تم إنشاء الطلب";
+              else if(event.action==="service_request_status_changed") label="تغيير الحالة: "+String(meta?.from||"")+" ← "+String(meta?.to||"");
+              else if(event.action==="service_request_decision") label="قرار الإدارة: "+String(meta?.decision||"");
+            }catch{}
+            return <div key={i}><b>{label}</b><span>{fmt(event.created_at)} · {event.actor_name||"النظام"}</span></div>;
+          })}</div> : <p className="detail-empty">لا يوجد سجل إجراءات إضافي.</p>}
+        </div>
         {data.approval&&<div className="detail-section approval-detail"><h3><ShieldCheck size={16}/> الموافقة</h3>
           <dl className="detail-list">
             <div><dt>السبب</dt><dd>{data.approval.reason}</dd></div>
