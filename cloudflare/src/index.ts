@@ -39,7 +39,7 @@ async function sha256Hex(value: string) {
   return Array.from(new Uint8Array(digest)).map(x => x.toString(16).padStart(2, "0")).join("");
 }
 
-async function derivePassword(password: string, salt: Uint8Array, iterations = 210000) {
+async function derivePassword(password: string, salt: Uint8Array, iterations = 100000) {
   const baseKey = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
     { name: "PBKDF2", hash: "SHA-256", salt: salt as BufferSource, iterations },
@@ -52,7 +52,7 @@ async function derivePassword(password: string, salt: Uint8Array, iterations = 2
 async function hashPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const hash = await derivePassword(password, salt);
-  return `pbkdf2_sha256$210000$${bytesToBase64(salt)}$${bytesToBase64(hash)}`;
+  return `pbkdf2_sha256$100000$${bytesToBase64(salt)}$${bytesToBase64(hash)}`;
 }
 
 async function verifyPassword(password: string, encoded: string) {
@@ -113,28 +113,40 @@ export default {
       if (!env.SETUP_KEY) return json({ error: "setup_disabled" }, { status: 503 });
       if (request.headers.get("x-setup-key") !== env.SETUP_KEY) return json({ error: "forbidden" }, { status: 403 });
 
-      const count = await env.DB.prepare("SELECT COUNT(*) AS users FROM users").first<{ users: number }>();
-      if ((count?.users ?? 0) > 0) return json({ error: "setup_already_completed" }, { status: 409 });
+      let stage = "validate";
+      try {
+        stage = "count_users";
+        const count = await env.DB.prepare("SELECT COUNT(*) AS users FROM users").first<{ users: number }>();
+        if ((count?.users ?? 0) > 0) return json({ error: "setup_already_completed" }, { status: 409 });
 
-      const body = await readJson<{ name?: string; username?: string; password?: string }>(request);
-      const name = body?.name?.trim();
-      const username = body?.username?.trim().toLowerCase();
-      const password = body?.password || "";
-      if (!name || !username || password.length < 10) return json({ error: "invalid_setup_payload" }, { status: 400 });
+        stage = "read_payload";
+        const body = await readJson<{ name?: string; username?: string; password?: string }>(request);
+        const name = body?.name?.trim();
+        const username = body?.username?.trim().toLowerCase();
+        const password = body?.password || "";
+        if (!name || !username || password.length < 10) return json({ error: "invalid_setup_payload" }, { status: 400 });
 
-      const id = crypto.randomUUID();
-      const passwordHash = await hashPassword(password);
-      await env.DB.prepare(`
-        INSERT INTO users (id, name, username, password_hash, role, active)
-        VALUES (?1, ?2, ?3, ?4, 'admin', 1)
-      `).bind(id, name, username, passwordHash).run();
+        stage = "hash_password";
+        const id = crypto.randomUUID();
+        const passwordHash = await hashPassword(password);
 
-      await env.DB.prepare(`
-        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
-        VALUES (?1, 'bootstrap_admin_created', 'user', ?1, '{"source":"setup"}')
-      `).bind(id).run();
+        stage = "insert_user";
+        await env.DB.prepare(`
+          INSERT INTO users (id, name, username, password_hash, role, active)
+          VALUES (?1, ?2, ?3, ?4, 'admin', 1)
+        `).bind(id, name, username, passwordHash).run();
 
-      return json({ ok: true });
+        stage = "audit";
+        await env.DB.prepare(`
+          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+          VALUES (?1, 'bootstrap_admin_created', 'user', ?1, '{"source":"setup"}')
+        `).bind(id).run();
+
+        return json({ ok: true });
+      } catch (error) {
+        console.error("setup_admin_failed", { stage, error: error instanceof Error ? error.message : String(error) });
+        return json({ error: "setup_internal_error", stage }, { status: 500 });
+      }
     }
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
