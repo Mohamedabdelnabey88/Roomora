@@ -49,7 +49,7 @@ export default function Dashboard() {
       (activeFloor === "all" || r.floor === activeFloor) &&
       (r.number.includes(query) || (r.guest || "").includes(query))
     ),
-    [activeFloor, query]
+    [rooms, activeFloor, query]
   );
 
   const occupied = rooms.filter(r => ["occupied","checkout","request"].includes(r.status)).length;
@@ -68,7 +68,7 @@ export default function Dashboard() {
       <nav>
         <button className="nav-item active"><HouseLine size={20}/> لوحة التشغيل</button>
         <button className="nav-item"><Bed size={20}/> الغرف والإقامات</button>
-        <button className="nav-item"><ListChecks size={20}/> طلبات الغرف <em>3</em></button>
+        <button className="nav-item"><ListChecks size={20}/> طلبات الغرف {requests.length > 0 && <em>{requests.length}</em>}</button>
         <button className="nav-item"><Users size={20}/> النزلاء</button>
         <button className="nav-item"><Package size={20}/> المستهلكات</button>
         <button className="nav-item"><ChartBar size={20}/> التقارير</button>
@@ -102,12 +102,12 @@ export default function Dashboard() {
             <Clock size={18}/>
             <div><span>يوم الفندق</span><b>{businessDay.label} · يبدأ 06:00</b></div>
           </div>
-          <button className="icon-btn" onClick={() => setNotifOpen(v=>!v)}><Bell size={21}/><i>3</i></button>
+          <button className="icon-btn" onClick={() => setNotifOpen(v=>!v)}><Bell size={21}/>{notifications.length > 0 && <i>{notifications.length}</i>}</button>
           <button className="primary-btn"><Plus size={18}/> تسجيل دخول نزيل</button>
         </div>
 
         <AnimatePresence>{notifOpen && <motion.div className="notif-pop" initial={{opacity:0,y:-8,scale:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-8,scale:.98}}>
-          <div className="notif-head"><b>الإشعارات</b><span>3 جديدة</span></div>
+          <div className="notif-head"><b>الإشعارات</b><span>{notifications.length} جديدة</span></div>
           {notifications.map((n,i)=><div className="notif-row" key={i}>
             <span className={`dot ${n.tone}`}/>
             <div><b>{n.title}</b><p>{n.body}</p></div>
