@@ -1,7 +1,8 @@
 "use client";
 import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
-import { ArrowRight,MagnifyingGlass,Phone,Users } from "@phosphor-icons/react";
+import { ArrowRight,MagnifyingGlass,Phone,Eye } from "@phosphor-icons/react";
+import StayDetailDialog from "@/components/StayDetailDialog";
 
 type StayRow={
   id:string; guest_name:string; guest_phone?:string|null; status:string;
@@ -15,13 +16,16 @@ export default function GuestsPanel(){
   const [error,setError]=useState("");
   const [q,setQ]=useState("");
   const [scope,setScope]=useState("all");
+  const [role,setRole]=useState<"admin"|"reception"|null>(null);
+  const [detailId,setDetailId]=useState<string|null>(null);
 
   useEffect(()=>{(async()=>{
-    const r=await fetch("/api/stays",{cache:"no-store"});
-    if(r.status===401){window.location.href="/login";return;}
+    const [r,u]=await Promise.all([fetch("/api/stays",{cache:"no-store"}),fetch("/api/auth/me",{cache:"no-store"})]);
+    if(r.status===401||u.status===401){window.location.href="/login";return;}
     const p=await r.json().catch(()=>[]);
+    const up=await u.json().catch(()=>null);
     if(!r.ok||!Array.isArray(p)){setError("تعذر تحميل سجل النزلاء");setLoading(false);return;}
-    setRows(p);setLoading(false);
+    setRows(p);setRole(up?.user?.role||null);setLoading(false);
   })();},[]);
 
   const filtered=useMemo(()=>rows.filter(x=>{
@@ -37,7 +41,8 @@ export default function GuestsPanel(){
     <section className="panel rooms-directory">
       <div className="directory-toolbar"><div className="search wide"><MagnifyingGlass size={17}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ابحث باسم النزيل أو الجوال أو الغرفة"/></div><select value={scope} onChange={e=>setScope(e.target.value)}><option value="all">كل الإقامات</option><option value="in_house">داخل الفندق</option><option value="checked_out">غادر</option><option value="cancelled">ملغاة</option></select></div>
       {loading?<div className="rooms-state">جاري تحميل النزلاء…</div>:error?<div className="rooms-state error">{error}</div>:
-      <div className="rooms-table-wrap"><table className="rooms-table"><thead><tr><th>النزيل</th><th>الغرفة</th><th>الحالة</th><th>الدخول</th><th>الخروج المتوقع</th><th>الخروج الفعلي</th><th>الطلبات</th></tr></thead><tbody>{filtered.map(x=><tr key={x.id}><td><b>{x.guest_name}</b><small><Phone size={11}/> {phone(x.guest_phone)}</small></td><td><b>{x.room_number}</b><small>{x.room_type}</small></td><td><span className={"table-status "+(x.status==="in_house"?"occupied":"available")}>{x.status==="in_house"?"داخل الفندق":x.status==="checked_out"?"غادر":"ملغاة"}</span></td><td>{d(x.checkin_at)}</td><td>{d(x.expected_checkout_at)}</td><td>{d(x.actual_checkout_at)}</td><td>{x.total_requests||0}{Number(x.open_requests||0)>0?<small>{x.open_requests} مفتوح</small>:null}</td></tr>)}</tbody></table></div>}
+      <div className="rooms-table-wrap"><table className="rooms-table"><thead><tr><th>النزيل</th><th>الغرفة</th><th>الحالة</th><th>الدخول</th><th>الخروج المتوقع</th><th>الخروج الفعلي</th><th>الطلبات</th><th>التفاصيل</th></tr></thead><tbody>{filtered.map(x=><tr key={x.id}><td><b>{x.guest_name}</b><small><Phone size={11}/> {phone(x.guest_phone)}</small></td><td><b>{x.room_number}</b><small>{x.room_type}</small></td><td><span className={"table-status "+(x.status==="in_house"?"occupied":"available")}>{x.status==="in_house"?"داخل الفندق":x.status==="checked_out"?"غادر":"ملغاة"}</span></td><td>{d(x.checkin_at)}</td><td>{d(x.expected_checkout_at)}</td><td>{d(x.actual_checkout_at)}</td><td>{x.total_requests||0}{Number(x.open_requests||0)>0?<small>{x.open_requests} مفتوح</small>:null}</td><td>{role==="admin"?<button className="detail-button compact" onClick={()=>setDetailId(x.id)}><Eye size={14}/> فتح الملف</button>:<span>—</span>}</td></tr>)}</tbody></table></div>}
     </section>
+    <StayDetailDialog stayId={detailId} onClose={()=>setDetailId(null)}/>
   </main>;
 }
