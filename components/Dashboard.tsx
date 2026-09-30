@@ -296,11 +296,11 @@ export default function Dashboard() {
               onClick={()=>setSelected(room)}
             >
               <div className="room-top"><b>{room.number}</b><span>{labels[room.status]}</span></div>
-              <small>{room.type}</small>
+              <small className="room-type">{room.type}</small>
               <div className="room-meta">
                 {room.guest
-                  ? <><p>{room.guest}</p><span>{room.nights} {room.nights===1?"ليلة":"ليالٍ"}{room.openRequests ? ` · ${room.openRequests} طلب` : ""}</span></>
-                  : <><p>جاهزة للاستقبال</p><span>لا توجد إقامة حالية</span></>}
+                  ? <><p className="room-guest">{room.guest}</p><span>{room.nights} {room.nights===1?"ليلة":"ليالٍ"}{room.openRequests ? ` · ${room.openRequests} طلب` : ""}</span></>
+                  : <><p className="room-ready">متاحة الآن</p><span>جاهزة للتسكين</span></>}
               </div>
             </motion.button>)}
           </motion.div>
