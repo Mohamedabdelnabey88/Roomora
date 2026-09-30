@@ -73,7 +73,7 @@ export default function Dashboard() {
         <button className="nav-item"><Package size={20}/> المستهلكات</button>
         <button className="nav-item"><ChartBar size={20}/> التقارير</button>
         <div className="nav-sep" />
-        <button className="nav-item"><ShieldCheck size={20}/> الموظفون والصلاحيات</button>
+        <Link href="/employees" className="nav-item"><ShieldCheck size={20}/> الموظفون والصلاحيات</Link>
         <Link href="/settings" className="nav-item"><Gear size={20}/> الإعدادات</Link>
       </nav>
 
@@ -85,7 +85,7 @@ export default function Dashboard() {
       <div className="user-card">
         <div className="avatar">م</div>
         <div><b>مدير الفندق</b><span>Administrator</span></div>
-        <SignOut size={18}/>
+        <button className="logout-icon" onClick={async()=>{ await fetch("/api/auth/logout",{method:"POST"}); window.location.href="/login"; }} aria-label="تسجيل الخروج"><SignOut size={18}/></button>
       </div>
     </aside>
 
