@@ -6,6 +6,7 @@ import { ArrowRight, Bed, CalendarBlank, CheckCircle, MagnifyingGlass, Plus } fr
 import { mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
 import { CheckinDialog, ExtendStayDialog } from "@/components/StayDialogs";
 import RequestDialog from "@/components/RequestDialog";
+import { notifyOperationsChanged, subscribeOperationsChanged } from "@/lib/operations-events";
 
 const labels = {
   available:"متاحة",
@@ -42,7 +43,11 @@ export default function RoomsPanel() {
     setLoading(false);
   }
 
-  useEffect(()=>{ void load(); },[]);
+  useEffect(()=>{
+    void load();
+    const unsubscribe=subscribeOperationsChanged(()=>{ void load(); });
+    return unsubscribe;
+  },[]);
 
   const filtered=useMemo(()=>rooms.filter(room=>{
     const matchesStatus=status==="all" || room.status===status;
@@ -69,6 +74,7 @@ export default function RoomsPanel() {
       return;
     }
     setMessage("تم تسجيل خروج النزيل بنجاح.");
+    notifyOperationsChanged();
     await load();
   }
 
@@ -116,8 +122,8 @@ export default function RoomsPanel() {
       </div>}
     </section>
 
-    <CheckinDialog room={checkinRoom} onClose={()=>setCheckinRoom(null)} onSuccess={load}/>
-    <ExtendStayDialog room={extendRoom} onClose={()=>setExtendRoom(null)} onSuccess={load}/>
-    <RequestDialog room={requestRoom} onClose={()=>setRequestRoom(null)} onSuccess={async()=>{setMessage("تم تسجيل الطلب.");await load();}}/>
+    <CheckinDialog room={checkinRoom} onClose={()=>setCheckinRoom(null)} onSuccess={async()=>{notifyOperationsChanged();await load();}}/>
+    <ExtendStayDialog room={extendRoom} onClose={()=>setExtendRoom(null)} onSuccess={async()=>{notifyOperationsChanged();await load();}}/>
+    <RequestDialog room={requestRoom} onClose={()=>setRequestRoom(null)} onSuccess={async()=>{setMessage("تم تسجيل الطلب.");notifyOperationsChanged();await load();}}/>
   </main>;
 }
