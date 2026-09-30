@@ -86,9 +86,9 @@ export default function RequestsPanel() {
     </header>
 
     <section className="request-kpis">
-      <div><ListChecks size={19}/><span>النشطة</span><b>{requests.length}</b></div>
+      <div><ListChecks size={19}/><span>النشطة</span><b>{requests.filter(r=>!["delivered","cancelled"].includes(r.status)).length}</b></div>
       <div><ShieldCheck size={19}/><span>تحتاج موافقة</span><b>{requests.filter(r=>r.status==="approval_required").length}</b></div>
-      <div><Clock size={19}/><span>متأخرة +15 د</span><b>{requests.filter(r=>ageMinutes(r.requested_at)>=15).length}</b></div>
+      <div><Clock size={19}/><span>متأخرة +15 د</span><b>{requests.filter(r=>!["delivered","cancelled"].includes(r.status)&&ageMinutes(r.requested_at)>=15).length}</b></div>
     </section>
 
     <section className="panel requests-directory">
