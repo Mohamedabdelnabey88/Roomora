@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -8,7 +8,7 @@ import {
   Gear, HouseLine, ListChecks, MagnifyingGlass, MoonStars, Package, Plus,
   ShieldCheck, SignOut, Sparkle, Users, X
 } from "@phosphor-icons/react";
-import { notifications, requests, rooms, type Room } from "@/lib/data";
+import { notifications, requests, fallbackRooms, mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
 import { getHotelBusinessDay } from "@/lib/business-day";
 
 const labels = {
@@ -25,6 +25,24 @@ export default function Dashboard() {
   const [selected, setSelected] = useState<Room | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [rooms, setRooms] = useState<Room[]>(fallbackRooms);
+  const [loadingRooms, setLoadingRooms] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "https://roomora.mohamed27abdelnaby.workers.dev";
+    fetch(`${apiBase}/api/rooms`, { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<ApiRoom[]>;
+      })
+      .then((payload) => {
+        setRooms(payload.map(mapApiRoom));
+        setDataError(null);
+      })
+      .catch(() => setDataError("تعذر الاتصال بقاعدة بيانات الفندق"))
+      .finally(() => setLoadingRooms(false));
+  }, []);
 
   const filtered = useMemo(
     () => rooms.filter(r =>
@@ -128,7 +146,9 @@ export default function Dashboard() {
           )}</div>
 
           <motion.div layout className="room-grid">
-            {filtered.map((room,idx)=><motion.button
+            {loadingRooms && <div className="rooms-state">جاري تحميل الغرف من Cloudflare D1…</div>}
+            {!loadingRooms && dataError && <div className="rooms-state error">{dataError}</div>}
+            {!loadingRooms && !dataError && filtered.map((room,idx)=><motion.button
               layout
               initial={{opacity:0,y:8}}
               animate={{opacity:1,y:0}}
