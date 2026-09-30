@@ -177,8 +177,8 @@ export default function Dashboard() {
 
       <nav>
         <button className="nav-item active"><HouseLine size={20}/> لوحة التشغيل</button>
-        <button className="nav-item"><Bed size={20}/> الغرف والإقامات</button>
-        <button className="nav-item"><ListChecks size={20}/> طلبات الغرف {activeRequests.length > 0 && <em>{activeRequests.length}</em>}</button>
+        <Link href="/rooms" className="nav-item"><Bed size={20}/> الغرف والإقامات</Link>
+        <Link href="/requests" className="nav-item"><ListChecks size={20}/> طلبات الغرف {activeRequests.length > 0 && <em>{activeRequests.length}</em>}</Link>
         <button className="nav-item"><Users size={20}/> النزلاء</button>
         <button className="nav-item"><Package size={20}/> المستهلكات</button>
         <button className="nav-item"><ChartBar size={20}/> التقارير</button>
@@ -287,7 +287,7 @@ export default function Dashboard() {
           <div className="panel requests-panel">
             <div className="panel-head compact">
               <div><span className="section-kicker">SERVICE DESK</span><h2>الطلبات النشطة</h2></div>
-              <button className="text-btn">عرض الكل</button>
+              <Link href="/requests" className="text-btn">عرض الكل</Link>
             </div>
             <div className="request-list">{activeRequests.length===0
               ? <div className="requests-empty">لا توجد طلبات نشطة حاليًا.</div>
