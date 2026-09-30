@@ -33,3 +33,5 @@ npm run dev
 
 ## Production safety
 The current repository is the initial operational foundation. Real guest PII must not be entered until authentication, session security, RBAC enforcement, rate limiting and production audit controls are completed.
+
+<!-- Production deployment retry marker: premium-ui -->
