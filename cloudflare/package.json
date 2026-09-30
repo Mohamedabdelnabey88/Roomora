@@ -8,7 +8,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply roomora-db --remote"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260930.0",
+    "@cloudflare/workers-types": "^5.20260929.1",
     "typescript": "^5.9.3",
     "wrangler": "^4.144.0"
   }
