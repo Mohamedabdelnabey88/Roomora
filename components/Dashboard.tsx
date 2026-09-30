@@ -121,7 +121,7 @@ export default function Dashboard() {
 
   const occupied = rooms.filter(r => ["occupied","checkout","request"].includes(r.status)).length;
   const available = rooms.filter(r => r.status === "available").length;
-  const checkout = rooms.filter(r => r.status === "checkout").length;
+  const checkoutCount = rooms.filter(r => r.status === "checkout").length;
   const businessDay = getHotelBusinessDay(new Date(), { timezone:"Asia/Riyadh", startHour:6, startMinute:0 });
   const todayLabel = new Intl.DateTimeFormat("ar-SA", { timeZone:"Asia/Riyadh", weekday:"long", day:"numeric", month:"long", year:"numeric" }).format(new Date());
 
@@ -191,7 +191,7 @@ export default function Dashboard() {
         <Stat icon={<Buildings/>} label="إجمالي الغرف" value={String(rooms.length)} hint="4 أنواع سكن" />
         <Stat icon={<DoorOpen/>} label="الغرف المشغولة" value={String(occupied)} hint="الإشغال الحالي" accent />
         <Stat icon={<CheckCircle/>} label="الغرف المتاحة" value={String(available)} hint="جاهزة للتسكين" />
-        <Stat icon={<CalendarCheck/>} label="خروج اليوم" value={String(checkout)} hint="حسب يوم الفندق" />
+        <Stat icon={<CalendarCheck/>} label="خروج اليوم" value={String(checkoutCount)} hint="حسب يوم الفندق" />
       </section>
 
       <section className="content-grid">
