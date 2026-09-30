@@ -464,12 +464,16 @@ export default {
           sr.delivered_at,
           r.number AS room_number,
           s.guest_name,
-          GROUP_CONCAT(ri.name || ' × ' || srl.quantity, '، ') AS items
+          GROUP_CONCAT(ri.name || ' × ' || srl.quantity, '، ') AS items,
+          MAX(ar.reason) AS approval_reason
         FROM service_requests sr
         JOIN rooms r ON r.id = sr.room_id
         JOIN stays s ON s.id = sr.stay_id
         LEFT JOIN service_request_lines srl ON srl.request_id = sr.id
         LEFT JOIN request_items ri ON ri.id = srl.item_id
+        LEFT JOIN approval_requests ar
+          ON ar.service_request_id = sr.id
+         AND ar.status = 'pending'
         WHERE sr.status NOT IN ('delivered','cancelled')
         GROUP BY sr.id
         ORDER BY sr.requested_at ASC
@@ -798,7 +802,13 @@ export default {
           s.guest_name,
           s.guest_phone,
           s.checkin_at,
-          s.expected_checkout_at
+          s.expected_checkout_at,
+          (
+            SELECT COUNT(*)
+            FROM service_requests sr
+            WHERE sr.room_id = r.id
+              AND sr.status NOT IN ('delivered','cancelled')
+          ) AS open_requests
         FROM rooms r
         LEFT JOIN stays s
           ON s.room_id = r.id
