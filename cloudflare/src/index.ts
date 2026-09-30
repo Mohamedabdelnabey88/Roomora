@@ -196,6 +196,71 @@ export default {
       return json({ ok: true });
     }
 
+    if (url.pathname === "/api/admin/users" && request.method === "GET") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error: "unauthorized" }, { status: 401 });
+      if (actor.role !== "admin") return json({ error: "forbidden" }, { status: 403 });
+
+      const result = await env.DB.prepare(`
+        SELECT id, name, username, role, active, created_at
+        FROM users
+        ORDER BY created_at DESC
+      `).all();
+      return json(result.results);
+    }
+
+    if (url.pathname === "/api/admin/users" && request.method === "POST") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error: "unauthorized" }, { status: 401 });
+      if (actor.role !== "admin") return json({ error: "forbidden" }, { status: 403 });
+
+      const body = await readJson<{ name?: string; username?: string; password?: string; role?: "admin" | "reception" }>(request);
+      const name = body?.name?.trim();
+      const username = body?.username?.trim().toLowerCase();
+      const password = body?.password || "";
+      const role = body?.role === "admin" ? "admin" : "reception";
+      if (!name || !username || password.length < 10) return json({ error: "invalid_user_payload" }, { status: 400 });
+
+      const existing = await env.DB.prepare("SELECT id FROM users WHERE username = ?1 LIMIT 1").bind(username).first();
+      if (existing) return json({ error: "username_exists" }, { status: 409 });
+
+      const id = crypto.randomUUID();
+      const passwordHash = await hashPassword(password);
+      await env.DB.prepare(`
+        INSERT INTO users (id, name, username, password_hash, role, active)
+        VALUES (?1, ?2, ?3, ?4, ?5, 1)
+      `).bind(id, name, username, passwordHash, role).run();
+
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+        VALUES (?1, 'user_created', 'user', ?2, ?3)
+      `).bind(actor.id, id, JSON.stringify({ role })).run();
+
+      return json({ id, name, username, role, active: 1 }, { status: 201 });
+    }
+
+    if (url.pathname.startsWith("/api/admin/users/") && request.method === "PATCH") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error: "unauthorized" }, { status: 401 });
+      if (actor.role !== "admin") return json({ error: "forbidden" }, { status: 403 });
+
+      const userId = url.pathname.split("/").pop() || "";
+      const body = await readJson<{ active?: boolean }>(request);
+      if (!userId || typeof body?.active !== "boolean") return json({ error: "invalid_payload" }, { status: 400 });
+      if (userId === actor.id && body.active === false) return json({ error: "cannot_disable_self" }, { status: 409 });
+
+      const updated = await env.DB.prepare("UPDATE users SET active = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2")
+        .bind(body.active ? 1 : 0, userId).run();
+      if (!updated.meta.changes) return json({ error: "user_not_found" }, { status: 404 });
+
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+        VALUES (?1, 'user_status_changed', 'user', ?2, ?3)
+      `).bind(actor.id, userId, JSON.stringify({ active: body.active })).run();
+
+      return json({ ok: true });
+    }
+
     if (url.pathname === "/api/bootstrap" && request.method === "GET") {
       const user = await requireSession(request, env);
       if (!user) return json({ error: "unauthorized" }, { status: 401 });
