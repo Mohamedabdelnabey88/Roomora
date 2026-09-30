@@ -106,7 +106,7 @@ export default {
 
     if (url.pathname === "/api/setup/status" && request.method === "GET") {
       const row = await env.DB.prepare("SELECT COUNT(*) AS users FROM users").first<{ users: number }>();
-      return json({ setupRequired: (row?.users ?? 0) === 0 });
+      return json({ setupRequired: (row?.users ?? 0) === 0, setupKeyConfigured: Boolean(env.SETUP_KEY) });
     }
 
     if (url.pathname === "/api/setup/admin" && request.method === "POST") {
