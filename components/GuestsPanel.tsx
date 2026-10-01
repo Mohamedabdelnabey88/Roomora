@@ -88,88 +88,90 @@ export default function GuestsPanel(){
       return;
     }
     setExportingCheckoutPdf(true);setExportError("");
-    let host:HTMLDivElement|null=null;
+    const hosts:HTMLDivElement[]=[];
     try{
       const [{default:html2canvas},{PDFDocument}]=await Promise.all([import("html2canvas"),import("pdf-lib")]);
       const businessDay=getHotelBusinessDay(new Date(),{timezone:"Asia/Riyadh",startHour:6,startMinute:0});
       const generated=new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date());
-
-      host=document.createElement("div");
-      host.setAttribute("dir","rtl");
-      host.style.cssText="position:fixed;left:-20000px;top:0;width:1120px;background:#fff;color:#17201d;font-family:Tahoma,Arial,sans-serif;padding:36px;";
-      const esc=(value:unknown)=>String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
-      const body=checkoutRows.map((row,index)=>`
-        <tr>
-          <td class="idx">${index+1}</td>
-          <td class="room">${esc(row.room_number)}</td>
-          <td>${esc(row.guest_name)}</td>
-          <td class="phone">${esc(row.guest_phone||"غير مسجل")}</td>
-          <td class="notes">&nbsp;</td>
-        </tr>
-      `).join("");
-
-      host.innerHTML=`
-        <style>
-          *{box-sizing:border-box}
-          .sheet{width:100%}
-          .head{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid #155f4b;padding-bottom:14px;margin-bottom:20px}
-          .brand b{display:block;font-size:28px;color:#155f4b}.brand span{display:block;font-size:12px;color:#75837d;margin-top:4px}
-          .meta{text-align:left}.meta span{display:block;font-size:11px;color:#788680}.meta b{display:block;font-size:14px;margin-top:4px}
-          h1{font-size:24px;margin:0 0 5px}.subtitle{font-size:12px;color:#6f7e78;margin:0 0 18px}
-          .summary{display:flex;gap:10px;margin-bottom:16px}.summary div{border:1px solid #dfe8e4;background:#f7faf8;border-radius:10px;padding:10px 14px;font-size:11px}.summary b{font-size:16px;color:#155f4b;margin-right:6px}
-          table{width:100%;border-collapse:collapse;table-layout:fixed}
-          th{background:#155f4b;color:#fff;padding:12px 10px;font-size:13px;border:1px solid #155f4b;text-align:center}
-          td{height:52px;padding:9px 10px;border:1px solid #cfdad5;font-size:13px;vertical-align:middle;background:#fff}
-          tr:nth-child(even) td{background:#fbfcfc}
-          th:nth-child(1),td:nth-child(1){width:6%}
-          th:nth-child(2),td:nth-child(2){width:13%}
-          th:nth-child(3),td:nth-child(3){width:27%}
-          th:nth-child(4),td:nth-child(4){width:22%}
-          th:nth-child(5),td:nth-child(5){width:32%}
-          .idx,.room,.phone{text-align:center}.room{font-weight:800;font-size:15px}.notes{background:#fff!important}
-          .foot{display:flex;justify-content:space-between;margin-top:18px;padding-top:10px;border-top:1px solid #e1e8e5;color:#89958f;font-size:10px}
-        </style>
-        <div class="sheet">
-          <div class="head">
-            <div class="brand"><b>Roomora</b><span>Hotel Operations</span></div>
-            <div class="meta"><span>يوم الفندق</span><b>${esc(businessDay.label)}</b><span>تم إنشاء الكشف: ${esc(generated)}</span></div>
-          </div>
-          <h1>كشف خروج النزلاء</h1>
-          <p class="subtitle">كشف يومي للحجوزات المقرر خروجها اليوم، ويظل العميل ظاهرًا حتى لو تم تسجيل خروجه قبل الطباعة.</p>
-          <div class="summary"><div>إجمالي المغادرين المتوقعين اليوم <b>${checkoutRows.length}</b></div></div>
-          <table>
-            <thead><tr><th>#</th><th>رقم الغرفة</th><th>اسم العميل</th><th>رقم الهاتف</th><th>ملاحظات</th></tr></thead>
-            <tbody>${body}</tbody>
-          </table>
-          <div class="foot"><span>Roomora · كشف خروج يومي</span><span>الملاحظات مخصصة للكتابة اليدوية بعد الطباعة</span></div>
-        </div>`;
-      document.body.appendChild(host);
-
-      const canvas=await html2canvas(host,{scale:2,useCORS:true,backgroundColor:"#ffffff",logging:false,width:1120,windowWidth:1120,windowHeight:host.scrollHeight});
       const pdf=await PDFDocument.create();
-      const pageW=841.89,pageH=595.28,margin=24;
+      const pageW=841.89,pageH=595.28,margin=20;
       const usableW=pageW-margin*2,usableH=pageH-margin*2;
-      const pxPerPt=canvas.width/usableW;
-      const slicePx=Math.max(1,Math.floor(usableH*pxPerPt));
-      let offset=0;
-      while(offset<canvas.height){
-        const sliceH=Math.min(slicePx,canvas.height-offset);
-        const part=document.createElement("canvas");
-        part.width=canvas.width;part.height=sliceH;
-        const ctx=part.getContext("2d");
-        if(!ctx)throw new Error("تعذر تجهيز صفحة PDF");
-        ctx.fillStyle="#fff";ctx.fillRect(0,0,part.width,part.height);
-        ctx.drawImage(canvas,0,offset,canvas.width,sliceH,0,0,canvas.width,sliceH);
-        const dataUrl=part.toDataURL("image/jpeg",0.95);
+      const esc=(value:unknown)=>String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+      const pages:Array<typeof checkoutRows>=[];
+      for(let i=0;i<checkoutRows.length;i+=15)pages.push(checkoutRows.slice(i,i+15));
+
+      for(let pageIndex=0;pageIndex<pages.length;pageIndex++){
+        const pageRows=pages[pageIndex];
+        const startIndex=pageIndex*15;
+        const body=pageRows.map((row,index)=>`
+          <tr>
+            <td class="idx">${startIndex+index+1}</td>
+            <td class="room">${esc(row.room_number)}</td>
+            <td class="guest">${esc(row.guest_name)}</td>
+            <td class="phone">${esc(row.guest_phone||"غير مسجل")}</td>
+            <td class="notes">&nbsp;</td>
+          </tr>
+        `).join("");
+
+        const host=document.createElement("div");
+        hosts.push(host);
+        host.setAttribute("dir","rtl");
+        host.style.cssText="position:fixed;left:-20000px;top:0;width:1120px;height:760px;overflow:hidden;background:#fff;color:#17201d;font-family:Tahoma,Arial,sans-serif;padding:24px 28px;";
+        host.innerHTML=`
+          <style>
+            *{box-sizing:border-box}
+            .sheet{width:100%;height:100%;display:flex;flex-direction:column}
+            .head{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid #155f4b;padding-bottom:9px;margin-bottom:9px}
+            .brand b{display:block;font-size:24px;color:#155f4b;line-height:1}.brand span{display:block;font-size:10px;color:#75837d;margin-top:3px}
+            .meta{text-align:left}.meta span{display:block;font-size:9px;color:#788680}.meta b{display:block;font-size:12px;margin:2px 0}
+            .title-row{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:8px}
+            h1{font-size:20px;margin:0}.subtitle{font-size:9px;color:#6f7e78;margin:2px 0 0}
+            .page-no{font-size:9px;color:#7c8984;white-space:nowrap}
+            .summary{display:flex;gap:8px;margin-bottom:8px}.summary div{border:1px solid #dfe8e4;background:#f7faf8;border-radius:8px;padding:6px 10px;font-size:9px}.summary b{font-size:13px;color:#155f4b;margin-right:4px}
+            table{width:100%;border-collapse:collapse;table-layout:fixed}
+            thead{display:table-header-group}
+            th{background:#155f4b;color:#fff;height:31px;padding:6px 8px;font-size:11px;border:1px solid #155f4b;text-align:center}
+            td{height:34px;padding:5px 8px;border:1px solid #cfdad5;font-size:11px;vertical-align:middle;background:#fff;line-height:1.2}
+            tr:nth-child(even) td{background:#fbfcfc}
+            th:nth-child(1),td:nth-child(1){width:5%}
+            th:nth-child(2),td:nth-child(2){width:12%}
+            th:nth-child(3),td:nth-child(3){width:28%}
+            th:nth-child(4),td:nth-child(4){width:22%}
+            th:nth-child(5),td:nth-child(5){width:33%}
+            .idx,.room,.phone{text-align:center}.room{font-weight:800;font-size:12px}.guest{font-weight:700}.notes{background:#fff!important}
+            .foot{display:flex;justify-content:space-between;margin-top:auto;padding-top:7px;border-top:1px solid #e1e8e5;color:#89958f;font-size:8px}
+          </style>
+          <div class="sheet">
+            <div class="head">
+              <div class="brand"><b>Roomora</b><span>Hotel Operations</span></div>
+              <div class="meta"><span>يوم الفندق</span><b>${esc(businessDay.label)}</b><span>تم إنشاء الكشف: ${esc(generated)}</span></div>
+            </div>
+            <div class="title-row">
+              <div><h1>كشف خروج النزلاء</h1><p class="subtitle">الحجوزات المقرر خروجها اليوم — الاسم ورقم الهاتف كما تم تسجيلهما.</p></div>
+              <div class="page-no">صفحة ${pageIndex+1} من ${pages.length}</div>
+            </div>
+            <div class="summary"><div>إجمالي المغادرين المتوقعين اليوم <b>${checkoutRows.length}</b></div><div>المعروض في هذه الصفحة <b>${pageRows.length}</b></div></div>
+            <table>
+              <thead><tr><th>#</th><th>رقم الغرفة</th><th>اسم العميل</th><th>رقم الهاتف</th><th>ملاحظات</th></tr></thead>
+              <tbody>${body}</tbody>
+            </table>
+            <div class="foot"><span>Roomora · كشف خروج يومي</span><span>بحد أقصى 15 نزيل في الصفحة · الملاحظات للكتابة اليدوية</span></div>
+          </div>`;
+        document.body.appendChild(host);
+
+        const canvas=await html2canvas(host,{scale:2,useCORS:true,backgroundColor:"#ffffff",logging:false,width:1120,height:760,windowWidth:1120,windowHeight:760});
+        const dataUrl=canvas.toDataURL("image/jpeg",0.95);
         const raw=atob(dataUrl.split(",")[1]||"");
         const bytes=new Uint8Array(raw.length);
         for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
         const image=await pdf.embedJpg(bytes);
-        const hPt=sliceH/pxPerPt;
+        const ratio=Math.min(usableW/canvas.width,usableH/canvas.height);
+        const drawW=canvas.width*ratio;
+        const drawH=canvas.height*ratio;
         const page=pdf.addPage([pageW,pageH]);
-        page.drawImage(image,{x:margin,y:pageH-margin-hPt,width:usableW,height:hPt});
-        offset+=sliceH;
+        page.drawImage(image,{x:(pageW-drawW)/2,y:(pageH-drawH)/2,width:drawW,height:drawH});
       }
+
       const output=await pdf.save({useObjectStreams:true});
       const buffer=output.buffer.slice(output.byteOffset,output.byteOffset+output.byteLength) as ArrayBuffer;
       const blob=new Blob([buffer],{type:"application/pdf"});
@@ -181,7 +183,7 @@ export default function GuestsPanel(){
     }catch(e){
       setExportError(e instanceof Error?e.message:"تعذر إنشاء كشف الخروج PDF.");
     }finally{
-      if(host?.parentNode)host.parentNode.removeChild(host);
+      for(const host of hosts)if(host.parentNode)host.parentNode.removeChild(host);
       setExportingCheckoutPdf(false);
     }
   }
