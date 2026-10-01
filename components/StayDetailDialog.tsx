@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect,useState } from "react";
-import { AnimatePresence,motion } from "framer-motion";
-import { CalendarBlank,Clock,HouseLine,ListChecks,Phone,User,X } from "@phosphor-icons/react";
+import { CalendarBlank,Clock,ListChecks,Phone,X } from "@phosphor-icons/react";
+import ModalFrame from "@/components/ui/ModalFrame";
 
 type StayDetail={
   stay:{id:string;guest_name:string;guest_phone?:string|null;status:string;checkin_at:string;expected_checkout_at:string;actual_checkout_at?:string|null;room_number:string;room_type:string;created_by_name?:string|null};
@@ -27,9 +27,7 @@ export default function StayDetailDialog({stayId,onClose}:{stayId:string|null;on
   if(!stayId)return null;
   const fmt=(v?:string|null)=>!v?"—":new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(v));
 
-  return <AnimatePresence><>
-    <motion.div className="overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}/>
-    <motion.section className="operation-modal detail-modal" initial={{opacity:0,y:18,scale:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:18,scale:.98}}>
+  return <ModalFrame open={Boolean(stayId)} onClose={onClose} className="detail-modal stay-detail-modal">
       <button className="close" onClick={onClose}><X size={19}/></button>
       <span className="section-kicker">GUEST STAY FILE</span>
       <h2>ملف النزيل والإقامة</h2>
@@ -54,6 +52,5 @@ export default function StayDetailDialog({stayId,onClose}:{stayId:string|null;on
           {data.requests.length===0?<p className="detail-empty">لا توجد طلبات لهذه الإقامة.</p>:<div className="timeline-list">{data.requests.map(x=><div key={x.id}><b>{x.items||"طلب غرفة"}</b><span>{fmt(x.requested_at)} · {x.status}</span></div>)}</div>}
         </div>
       </>}
-    </motion.section>
-  </></AnimatePresence>;
+    </ModalFrame>;
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect,useMemo,useState } from "react";
-import { AnimatePresence,motion } from "framer-motion";
 import { Clock,Package,ShieldCheck,User,X } from "@phosphor-icons/react";
+import ModalFrame from "@/components/ui/ModalFrame";
 
 type Detail={
   request:{id:string;status:string;priority:string;business_day:string;note?:string|null;requested_at:string;delivered_at?:string|null;room_number:string;stay_id:string;guest_name:string;guest_phone?:string|null;requested_by_name?:string|null;acknowledged_by_name?:string|null;delivered_by_name?:string|null};
@@ -43,9 +43,7 @@ export default function RequestDetailDialog({requestId,onClose}:{requestId:strin
   },[data]);
 
   if(!requestId)return null;
-  return <AnimatePresence><>
-    <motion.div className="overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}/>
-    <motion.section role="dialog" aria-modal="true" className="operation-modal request-detail-modal" initial={{opacity:0,y:18,scale:.985}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:18,scale:.985}}>
+  return <ModalFrame open={Boolean(requestId)} onClose={onClose} className="request-detail-modal">
       <header className="detail-modal-header">
         <div><span className="section-kicker">REQUEST DETAILS</span><h2>تفاصيل طلب الغرفة</h2>{data?<p>طلب #{data.request.id.slice(0,8).toUpperCase()} · يوم الفندق {data.request.business_day}</p>:null}</div>
         <button className="close inline-close" onClick={onClose} aria-label="إغلاق"><X size={19}/></button>
@@ -86,6 +84,5 @@ export default function RequestDetailDialog({requestId,onClose}:{requestId:strin
         </section>
       </>}
       </div>
-    </motion.section>
-  </></AnimatePresence>;
+    </ModalFrame>;
 }

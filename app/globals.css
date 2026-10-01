@@ -1035,3 +1035,90 @@ button,a,input,select{font-family:inherit}
   .report-two-col{grid-template-columns:1fr 1fr!important}
   .report-foot{margin-top:10px}
 }
+
+
+/* =========================================================
+   ROOMORA MODAL SYSTEM — viewport-safe / RTL-safe
+   Centralized modal geometry. Framer Motion no longer overrides centering.
+   ========================================================= */
+.modal-overlay{
+  z-index:190;
+  background:rgba(8,22,18,.46);
+  backdrop-filter:blur(7px);
+}
+.modal-viewport{
+  position:fixed;
+  inset:0;
+  z-index:200;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  pointer-events:none;
+  overflow:hidden;
+}
+.modal-surface{
+  position:relative !important;
+  top:auto !important;
+  left:auto !important;
+  right:auto !important;
+  bottom:auto !important;
+  margin:0 !important;
+  pointer-events:auto;
+  width:min(560px,100%);
+  max-width:100%;
+  max-height:calc(100dvh - 48px);
+  overflow:auto;
+  overscroll-behavior:contain;
+  transform-origin:center center;
+  border-radius:24px;
+  box-shadow:0 34px 100px rgba(8,28,22,.24);
+}
+.modal-surface.request-modal{width:min(700px,100%)}
+.modal-surface.request-detail-modal{width:min(940px,100%);overflow:hidden}
+.modal-surface.detail-modal{width:min(760px,100%)}
+.modal-surface.stay-detail-modal{width:min(820px,100%)}
+
+.request-detail-modal .detail-modal-body{
+  max-height:calc(100dvh - 172px);
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+.premium-request-modal form{
+  max-height:calc(100dvh - 180px);
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+.modal-surface::-webkit-scrollbar,
+.request-detail-modal .detail-modal-body::-webkit-scrollbar,
+.premium-request-modal form::-webkit-scrollbar{width:7px}
+.modal-surface::-webkit-scrollbar-thumb,
+.request-detail-modal .detail-modal-body::-webkit-scrollbar-thumb,
+.premium-request-modal form::-webkit-scrollbar-thumb{
+  background:#cbd7d2;
+  border-radius:999px;
+}
+.modal-surface .close,
+.modal-surface .inline-close{
+  z-index:4;
+}
+.drawer{
+  width:min(430px,92vw);
+  overflow:auto;
+  overscroll-behavior:contain;
+}
+@media(max-width:760px){
+  .modal-viewport{padding:10px;place-items:end center}
+  .modal-surface{
+    width:100% !important;
+    max-height:calc(100dvh - 10px);
+    border-radius:24px 24px 12px 12px;
+  }
+  .request-detail-modal .detail-modal-body,
+  .premium-request-modal form{max-height:calc(100dvh - 132px)}
+  .detail-two-col{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+  .modal-surface{transition:none!important}
+}

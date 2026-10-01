@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { CalendarBlank, Phone, User, X } from "@phosphor-icons/react";
 import type { Room } from "@/lib/data";
+import ModalFrame from "@/components/ui/ModalFrame";
 
 function toLocalInput(date: Date) {
   const pad = (n:number) => String(n).padStart(2,"0");
@@ -76,9 +76,7 @@ export function CheckinDialog({
     onClose();
   }
 
-  return <AnimatePresence><>
-    <motion.div className="overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}/>
-    <motion.section className="operation-modal" initial={{opacity:0,y:18,scale:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:18,scale:.98}}>
+  return <ModalFrame open={Boolean(room)} onClose={onClose}>
       <button className="close" onClick={onClose}><X size={19}/></button>
       <span className="section-kicker">NEW STAY</span>
       <h2>تسجيل دخول نزيل</h2>
@@ -92,8 +90,7 @@ export function CheckinDialog({
         {error && <div className="login-error">{error}</div>}
         <button className="primary-btn full" disabled={loading}>{loading?"جاري تسجيل الإقامة…":"تأكيد تسجيل الدخول"}</button>
       </form>
-    </motion.section>
-  </></AnimatePresence>;
+    </ModalFrame>;
 }
 
 export function ExtendStayDialog({
@@ -150,9 +147,7 @@ export function ExtendStayDialog({
     onClose();
   }
 
-  return <AnimatePresence><>
-    <motion.div className="overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}/>
-    <motion.section className="operation-modal" initial={{opacity:0,y:18,scale:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:18,scale:.98}}>
+  return <ModalFrame open={Boolean(room)} onClose={onClose}>
       <button className="close" onClick={onClose}><X size={19}/></button>
       <span className="section-kicker">EXTEND STAY</span>
       <h2>تمديد الإقامة</h2>
@@ -164,6 +159,5 @@ export function ExtendStayDialog({
         {error && <div className="login-error">{error}</div>}
         <button className="primary-btn full" disabled={loading}>{loading?"جاري التمديد…":"تأكيد التمديد"}</button>
       </form>
-    </motion.section>
-  </></AnimatePresence>;
+    </ModalFrame>;
 }

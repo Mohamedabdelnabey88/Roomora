@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent,useEffect,useMemo,useState } from "react";
-import { AnimatePresence,motion } from "framer-motion";
 import { Minus,Package,Plus,ShieldCheck,X } from "@phosphor-icons/react";
 import type { Room } from "@/lib/data";
+import ModalFrame from "@/components/ui/ModalFrame";
 
 type RequestItem={id:string;name:string;unit:string;max_per_request:number|null;max_per_business_day:number|null;max_per_stay:number|null};
 type Line={itemId:string;quantity:number};
@@ -55,9 +55,7 @@ export default function RequestDialog({room,onClose,onSuccess}:{room:Room|null;o
     onClose();
   }
 
-  return <AnimatePresence><>
-    <motion.div className="overlay" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={onClose}/>
-    <motion.section role="dialog" aria-modal="true" aria-labelledby="request-dialog-title" className="operation-modal request-modal premium-request-modal" initial={{opacity:0,y:20,scale:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:20,scale:.98}}>
+  return <ModalFrame open={Boolean(room?.stayId)} onClose={onClose} className="request-modal premium-request-modal" ariaLabelledBy="request-dialog-title">
       <header className="modal-hero">
         <div><span className="section-kicker">ROOM SERVICE</span><h2 id="request-dialog-title">طلب جديد للغرفة {room.number}</h2><p>{room.guest} · {room.type}</p></div>
         <button className="close inline-close" onClick={onClose} aria-label="إغلاق"><X size={19}/></button>
@@ -98,6 +96,5 @@ export default function RequestDialog({room,onClose,onSuccess}:{room:Room|null;o
           <button className="primary-btn" disabled={loading||loadingItems||!lines.length}>{loading?"جاري تسجيل الطلب…":"تسجيل الطلب"}</button>
         </footer>
       </form>
-    </motion.section>
-  </></AnimatePresence>;
+    </ModalFrame>;
 }
