@@ -42,7 +42,7 @@ export default function GuestsPanel(){
     const view=new URLSearchParams(window.location.search).get("view");
     const isCheckout=view==="checkout-today";
     setCheckoutView(isCheckout);
-    if(isCheckout){setScope("checked_out");setQ("");}
+    if(isCheckout){setScope("all");setQ("");}
   },[]);
 
   async function deleteStay(id:string){
@@ -74,8 +74,8 @@ export default function GuestsPanel(){
     const end=start+24*60*60*1000;
     return rows
       .filter(x=>{
-        if(x.status!=="checked_out"||!x.actual_checkout_at)return false;
-        const t=Date.parse(x.actual_checkout_at);
+        if(x.status==="cancelled"||!x.expected_checkout_at)return false;
+        const t=Date.parse(x.expected_checkout_at);
         return Number.isFinite(t)&&t>=start&&t<end;
       })
       .sort((a,b)=>String(a.room_number).localeCompare(String(b.room_number),undefined,{numeric:true}));
@@ -84,7 +84,7 @@ export default function GuestsPanel(){
   async function exportCheckoutPdf(){
     const checkoutRows=todayCheckoutRows();
     if(!checkoutRows.length){
-      setExportError("لا توجد حالات خروج مكتملة في يوم الفندق الحالي.");
+      setExportError("لا توجد حجوزات موعد خروجها اليوم.");
       return;
     }
     setExportingCheckoutPdf(true);setExportError("");
@@ -135,8 +135,8 @@ export default function GuestsPanel(){
             <div class="meta"><span>يوم الفندق</span><b>${esc(businessDay.label)}</b><span>تم إنشاء الكشف: ${esc(generated)}</span></div>
           </div>
           <h1>كشف خروج النزلاء</h1>
-          <p class="subtitle">كشف يومي لحالات الخروج المكتملة، مع مساحة مخصصة لملاحظات موظف الاستقبال.</p>
-          <div class="summary"><div>إجمالي حالات الخروج <b>${checkoutRows.length}</b></div></div>
+          <p class="subtitle">كشف يومي للحجوزات المقرر خروجها اليوم، ويظل العميل ظاهرًا حتى لو تم تسجيل خروجه قبل الطباعة.</p>
+          <div class="summary"><div>إجمالي المغادرين المتوقعين اليوم <b>${checkoutRows.length}</b></div></div>
           <table>
             <thead><tr><th>#</th><th>رقم الغرفة</th><th>اسم العميل</th><th>رقم الهاتف</th><th>ملاحظات</th></tr></thead>
             <tbody>${body}</tbody>
@@ -188,10 +188,13 @@ export default function GuestsPanel(){
 
   const todayCheckoutCount=useMemo(()=>todayCheckoutRows().length,[rows]);
 
-  const filtered=useMemo(()=>rows.filter(x=>{
-    const text=(x.guest_name+" "+(x.guest_phone||"")+" "+x.room_number).toLowerCase();
-    return (scope==="all"||x.status===scope)&&(!q||text.includes(q.toLowerCase()));
-  }),[rows,q,scope]);
+  const filtered=useMemo(()=>{
+    const source=checkoutView?todayCheckoutRows():rows;
+    return source.filter(x=>{
+      const text=(x.guest_name+" "+(x.guest_phone||"")+" "+x.room_number).toLowerCase();
+      return (checkoutView||scope==="all"||x.status===scope)&&(!q||text.includes(q.toLowerCase()));
+    });
+  },[rows,q,scope,checkoutView]);
 
   function d(v?:string|null){if(!v)return "—";return new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(v));}
   function phone(v?:string|null){if(!v)return "غير مسجل";const s=v.replace(/\s+/g,"");return s.length>5?s.slice(0,2)+"•••••"+s.slice(-3):"••••";}
@@ -200,13 +203,13 @@ export default function GuestsPanel(){
     <header className="settings-header premium-page-head"><div><Link href="/" className="back-link"><ArrowRight size={16}/> العودة للوحة التشغيل</Link><span className="section-kicker">GUEST DIRECTORY</span><h1>النزلاء والإقامات</h1><p>السجل الحالي والتاريخي للنزلاء المرتبط بالإقامات والغرف.</p></div><button className="primary-btn checkout-pdf-btn" onClick={()=>void exportCheckoutPdf()} disabled={exportingCheckoutPdf}><FilePdf size={18}/>{exportingCheckoutPdf?"جاري إنشاء الكشف…":"كشف خروج اليوم PDF"}</button></header>
     {exportError?<div className="login-error page-error">{exportError}</div>:null}
     {checkoutView?<section className="checkout-today-banner">
-      <div className="checkout-today-copy"><CalendarCheck size={24}/><div><span className="section-kicker">TODAY CHECKOUT</span><h2>خروج اليوم</h2><p>عدد حالات الخروج المكتملة في يوم الفندق الحالي: <b>{todayCheckoutCount}</b></p></div></div>
+      <div className="checkout-today-copy"><CalendarCheck size={24}/><div><span className="section-kicker">TODAY CHECKOUT</span><h2>خروج اليوم</h2><p>الحجوزات المقرر خروجها خلال يوم الفندق الحالي: <b>{todayCheckoutCount}</b></p></div></div>
       <button className="primary-btn checkout-pdf-btn prominent" onClick={()=>void exportCheckoutPdf()} disabled={exportingCheckoutPdf||todayCheckoutCount===0}><FilePdf size={18}/>{exportingCheckoutPdf?"جاري إنشاء الكشف…":"تنزيل كشف خروج اليوم PDF"}</button>
     </section>:null}
     <section className="panel rooms-directory">
       <div className="directory-toolbar"><div className="search wide"><MagnifyingGlass size={17}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ابحث باسم النزيل أو الجوال أو الغرفة"/></div><select value={scope} onChange={e=>setScope(e.target.value)}><option value="all">كل الإقامات</option><option value="in_house">داخل الفندق</option><option value="checked_out">غادر</option><option value="cancelled">ملغاة</option></select></div>
       {loading?<div className="rooms-state">جاري تحميل النزلاء…</div>:error?<div className="rooms-state error">{error}</div>:
-      <div className="rooms-table-wrap"><table className="rooms-table"><thead><tr><th>النزيل</th><th>الغرفة</th><th>الحالة</th><th>الدخول</th><th>الخروج المتوقع</th><th>الخروج الفعلي</th><th>الطلبات</th><th>الإجراءات</th></tr></thead><tbody>{filtered.map(x=><tr key={x.id}><td><b>{x.guest_name}</b><small><Phone size={11}/> {phone(x.guest_phone)}</small></td><td><b>{x.room_number}</b><small>{x.room_type}</small></td><td><span className={"table-status "+(x.status==="in_house"?"occupied":"available")}>{x.status==="in_house"?"داخل الفندق":x.status==="checked_out"?"غادر":"ملغاة"}</span></td><td>{d(x.checkin_at)}</td><td>{d(x.expected_checkout_at)}</td><td>{d(x.actual_checkout_at)}</td><td>{x.total_requests||0}{Number(x.open_requests||0)>0?<small>{x.open_requests} مفتوح</small>:null}</td><td>{role==="admin"?<div className="guest-row-actions">
+      <div className="rooms-table-wrap"><table className="rooms-table"><thead><tr><th>النزيل</th><th>الغرفة</th><th>الحالة</th><th>الدخول</th><th>الخروج المتوقع</th><th>الخروج الفعلي</th><th>الطلبات</th><th>الإجراءات</th></tr></thead><tbody>{filtered.map(x=><tr key={x.id}><td><b>{x.guest_name}</b><small><Phone size={11}/> {checkoutView?(x.guest_phone||"غير مسجل"):phone(x.guest_phone)}</small></td><td><b>{x.room_number}</b><small>{x.room_type}</small></td><td><span className={"table-status "+(x.status==="in_house"?"occupied":"available")}>{x.status==="in_house"?"داخل الفندق":x.status==="checked_out"?"غادر":"ملغاة"}</span></td><td>{d(x.checkin_at)}</td><td>{d(x.expected_checkout_at)}</td><td>{d(x.actual_checkout_at)}</td><td>{x.total_requests||0}{Number(x.open_requests||0)>0?<small>{x.open_requests} مفتوح</small>:null}</td><td>{role==="admin"?<div className="guest-row-actions">
   <button className="detail-button compact" onClick={()=>setDetailId(x.id)}><Eye size={14}/> فتح الملف</button>
   {deleteId!==x.id
     ?<button className="guest-delete-btn" onClick={()=>{setDeleteError("");setDeleteId(x.id)}}><Trash size={13}/> حذف</button>
