@@ -17,7 +17,10 @@ export default function GuestsPanel(){
   const [q,setQ]=useState("");
   const [scope,setScope]=useState("all");
   const [role,setRole]=useState<"admin"|"reception"|null>(null);
-  const [detailId,setDetailId]=useState<string|null>(null);\n  const [deleteId,setDeleteId]=useState<string|null>(null);\n  const [deletingId,setDeletingId]=useState<string|null>(null);\n  const [deleteError,setDeleteError]=useState("");
+  const [detailId,setDetailId]=useState<string|null>(null);
+  const [deleteId,setDeleteId]=useState<string|null>(null);
+  const [deletingId,setDeletingId]=useState<string|null>(null);
+  const [deleteError,setDeleteError]=useState("");
 
   async function load(silent=false){
     if(!silent)setLoading(true);
