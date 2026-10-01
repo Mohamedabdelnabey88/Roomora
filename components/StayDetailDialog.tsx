@@ -12,7 +12,9 @@ type StayDetail={
 
 export default function StayDetailDialog({stayId,role,onClose,onDeleted}:{stayId:string|null;role:"admin"|"reception"|null;onClose:()=>void;onDeleted:()=>Promise<void>|void}){
   const [data,setData]=useState<StayDetail|null>(null);
-  const [error,setError]=useState("");\n  const [confirmDelete,setConfirmDelete]=useState(false);\n  const [deleting,setDeleting]=useState(false);
+  const [error,setError]=useState("");
+  const [confirmDelete,setConfirmDelete]=useState(false);
+  const [deleting,setDeleting]=useState(false);
   useEffect(()=>{
     if(!stayId)return;
     setData(null);setError("");setConfirmDelete(false);setDeleting(false);
