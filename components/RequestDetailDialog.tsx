@@ -23,7 +23,10 @@ export default function RequestDetailDialog({requestId,role,onClose,onDeleted}:{
 
   useEffect(()=>{
     if(!requestId)return;
-    setData(null);setError("");
+    setData(null);
+    setError("");
+    setDeleting(false);
+    setConfirmDelete(false);
     fetch("/api/requests/"+encodeURIComponent(requestId),{cache:"no-store"})
       .then(async r=>({ok:r.ok,p:await r.json().catch(()=>null)}))
       .then(({ok,p})=>{if(!ok||!p)setError("تعذر تحميل تفاصيل الطلب");else setData(p)})
@@ -42,6 +45,8 @@ export default function RequestDetailDialog({requestId,role,onClose,onDeleted}:{
         backend_unreachable:"تعذر الاتصال بخدمة Roomora الخلفية."
       };
       if(!response.ok)throw new Error(map[payload.error]||"تعذر حذف الطلب نهائيًا.");
+      setDeleting(false);
+      setConfirmDelete(false);
       await onDeleted();
     }catch(e){
       setError(e instanceof Error?e.message:"تعذر حذف الطلب نهائيًا.");
