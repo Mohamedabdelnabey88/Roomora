@@ -1300,3 +1300,15 @@ button,a,input,select{font-family:inherit}
   .checkin-picker-head{display:block;padding-left:38px}.availability-summary{margin-top:12px;width:max-content}
   .checkin-picker-tools{grid-template-columns:1fr}.checkin-room-list{grid-template-columns:1fr}
 }
+
+
+/* Checkout workspace */
+.checkout-workspace-banner{align-items:flex-start}
+.checkout-workspace-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.checkout-view-tabs{display:flex;gap:6px;padding:4px;border:1px solid #dfe8e4;background:#fff;border-radius:11px}
+.checkout-view-tabs a{display:inline-flex;align-items:center;height:34px;padding:0 12px;border-radius:8px;text-decoration:none;color:#687771;font-size:9px;font-weight:800}
+.checkout-view-tabs a.active{background:#eaf4ef;color:#155f4b}
+@media(max-width:760px){
+  .checkout-workspace-actions{width:100%;justify-content:stretch}
+  .checkout-view-tabs{width:100%}.checkout-view-tabs a{flex:1;justify-content:center}
+}

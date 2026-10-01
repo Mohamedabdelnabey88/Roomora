@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowRight,MagnifyingGlass,Phone,Eye,Trash,WarningCircle,FilePdf,CalendarCheck } from "@phosphor-icons/react";
 import StayDetailDialog from "@/components/StayDetailDialog";
-import { getHotelBusinessDay } from "@/lib/business-day";
 
 type StayRow={
   id:string; guest_name:string; guest_phone?:string|null; status:string;
@@ -15,6 +14,8 @@ type StayRow={
 export default function GuestsPanel(){
   const searchParams=useSearchParams();
   const checkoutView=searchParams.get("view")==="checkout-today";
+  const checkoutHistoryView=searchParams.get("view")==="checkout-history";
+  const checkoutSection=checkoutView||checkoutHistoryView;
   const [rows,setRows]=useState<StayRow[]>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
@@ -38,7 +39,15 @@ export default function GuestsPanel(){
     setRows(p);setRole(up?.user?.role||null);setError("");if(!silent)setLoading(false);
   }
 
-  useEffect(()=>{void load();},[]);
+  useEffect(()=>{
+    void load();
+    const refresh=()=>{void load(true)};
+    const timer=window.setInterval(refresh,30000);
+    const onVisibility=()=>{if(document.visibilityState==="visible")refresh()};
+    window.addEventListener("focus",refresh);
+    document.addEventListener("visibilitychange",onVisibility);
+    return()=>{window.clearInterval(timer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",onVisibility)};
+  },[]);
 
   async function deleteStay(id:string){
     if(role!=="admin"||deletingId)return;
@@ -63,17 +72,24 @@ export default function GuestsPanel(){
     }
   }
 
+  function riyadhDateKey(value:string|Date){
+    const date=typeof value==="string"?new Date(value):value;
+    const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Riyadh",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);
+    const read=(type:string)=>parts.find(p=>p.type===type)?.value||"";
+    return read("year")+"-"+read("month")+"-"+read("day");
+  }
+
   function todayCheckoutRows(){
-    const businessDay=getHotelBusinessDay(new Date(),{timezone:"Asia/Riyadh",startHour:6,startMinute:0});
-    const start=Date.parse(businessDay.key+"T03:00:00.000Z");
-    const end=start+24*60*60*1000;
+    const today=riyadhDateKey(new Date());
     return rows
-      .filter(x=>{
-        if(x.status==="cancelled"||!x.expected_checkout_at)return false;
-        const t=Date.parse(x.expected_checkout_at);
-        return Number.isFinite(t)&&t>=start&&t<end;
-      })
+      .filter(x=>x.status!=="cancelled"&&Boolean(x.expected_checkout_at)&&riyadhDateKey(x.expected_checkout_at)===today)
       .sort((a,b)=>String(a.room_number).localeCompare(String(b.room_number),undefined,{numeric:true}));
+  }
+
+  function checkoutHistoryRows(){
+    return rows
+      .filter(x=>x.status==="checked_out"&&Boolean(x.actual_checkout_at))
+      .sort((a,b)=>new Date(b.actual_checkout_at||0).getTime()-new Date(a.actual_checkout_at||0).getTime());
   }
 
   async function exportCheckoutPdf(){
@@ -86,7 +102,8 @@ export default function GuestsPanel(){
     const hosts:HTMLDivElement[]=[];
     try{
       const [{default:html2canvas},{PDFDocument}]=await Promise.all([import("html2canvas"),import("pdf-lib")]);
-      const businessDay=getHotelBusinessDay(new Date(),{timezone:"Asia/Riyadh",startHour:6,startMinute:0});
+      const todayKey=riyadhDateKey(new Date());
+      const todayLabel=new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",year:"numeric",month:"long",day:"numeric"}).format(new Date());
       const generated=new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date());
       const pdf=await PDFDocument.create();
       const pageW=841.89,pageH=595.28,margin=20;
@@ -142,7 +159,7 @@ export default function GuestsPanel(){
           <div class="sheet">
             <div class="head">
               <div class="brand"><b>Roomora</b><span>Hotel Operations</span></div>
-              <div class="meta"><span>يوم الفندق</span><b>${esc(businessDay.label)}</b><span>تم إنشاء الكشف: ${esc(generated)}</span></div>
+              <div class="meta"><span>تاريخ كشف الخروج</span><b>${esc(todayLabel)}</b><span>تم إنشاء الكشف: ${esc(generated)}</span></div>
             </div>
             <div class="title-row">
               <div><h1>كشف خروج النزلاء</h1><p class="subtitle">الحجوزات المقرر خروجها اليوم — الاسم ورقم الهاتف كما تم تسجيلهما.</p></div>
@@ -175,7 +192,7 @@ export default function GuestsPanel(){
       const blob=new Blob([buffer],{type:"application/pdf"});
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
-      a.href=url;a.download=`roomora-checkouts-${businessDay.key}.pdf`;
+      a.href=url;a.download=`roomora-checkouts-${todayKey}.pdf`;
       document.body.appendChild(a);a.click();a.remove();
       setTimeout(()=>URL.revokeObjectURL(url),1000);
     }catch(e){
@@ -187,14 +204,15 @@ export default function GuestsPanel(){
   }
 
   const todayCheckoutCount=useMemo(()=>todayCheckoutRows().length,[rows]);
+  const checkoutHistoryCount=useMemo(()=>checkoutHistoryRows().length,[rows]);
 
   const filtered=useMemo(()=>{
-    const source=checkoutView?todayCheckoutRows():rows;
+    const source=checkoutView?todayCheckoutRows():checkoutHistoryView?checkoutHistoryRows():rows;
     return source.filter(x=>{
       const text=(x.guest_name+" "+(x.guest_phone||"")+" "+x.room_number).toLowerCase();
-      return (checkoutView||scope==="all"||x.status===scope)&&(!q||text.includes(q.toLowerCase()));
+      return (checkoutSection||scope==="all"||x.status===scope)&&(!q||text.includes(q.toLowerCase()));
     });
-  },[rows,q,scope,checkoutView]);
+  },[rows,q,scope,checkoutView,checkoutHistoryView,checkoutSection]);
 
   function d(v?:string|null){if(!v)return "—";return new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(v));}
   function phone(v?:string|null){if(!v)return "غير مسجل";const s=v.replace(/\s+/g,"");return s.length>5?s.slice(0,2)+"•••••"+s.slice(-3):"••••";}
@@ -202,14 +220,20 @@ export default function GuestsPanel(){
   return <main className="settings-page">
     <header className="settings-header premium-page-head"><div><Link href="/" className="back-link"><ArrowRight size={16}/> العودة للوحة التشغيل</Link><span className="section-kicker">GUEST DIRECTORY</span><h1>النزلاء والإقامات</h1><p>السجل الحالي والتاريخي للنزلاء المرتبط بالإقامات والغرف.</p></div><button className="primary-btn checkout-pdf-btn" onClick={()=>void exportCheckoutPdf()} disabled={exportingCheckoutPdf}><FilePdf size={18}/>{exportingCheckoutPdf?"جاري إنشاء الكشف…":"كشف خروج اليوم PDF"}</button></header>
     {exportError?<div className="login-error page-error">{exportError}</div>:null}
-    {checkoutView?<section className="checkout-today-banner">
-      <div className="checkout-today-copy"><CalendarCheck size={24}/><div><span className="section-kicker">TODAY CHECKOUT</span><h2>خروج اليوم</h2><p>الحجوزات المقرر خروجها خلال يوم الفندق الحالي: <b>{todayCheckoutCount}</b></p></div></div>
-      <button className="primary-btn checkout-pdf-btn prominent" onClick={()=>void exportCheckoutPdf()} disabled={exportingCheckoutPdf||todayCheckoutCount===0}><FilePdf size={18}/>{exportingCheckoutPdf?"جاري إنشاء الكشف…":"تنزيل كشف خروج اليوم PDF"}</button>
+    {checkoutSection?<section className="checkout-today-banner checkout-workspace-banner">
+      <div className="checkout-today-copy"><CalendarCheck size={24}/><div><span className="section-kicker">{checkoutView?"TODAY CHECKOUT":"CHECKOUT HISTORY"}</span><h2>{checkoutView?"خروج اليوم":"سجل الخروج"}</h2><p>{checkoutView?<>الحجوزات المقرر خروجها حسب تاريخ الرياض الحالي: <b>{todayCheckoutCount}</b></>:<>إجمالي حالات الخروج المسجلة: <b>{checkoutHistoryCount}</b></>}</p></div></div>
+      <div className="checkout-workspace-actions">
+        <div className="checkout-view-tabs">
+          <Link href="/guests?view=checkout-today" className={checkoutView?"active":""}>خروج اليوم</Link>
+          <Link href="/guests?view=checkout-history" className={checkoutHistoryView?"active":""}>سجل الخروج</Link>
+        </div>
+        {checkoutView?<button className="primary-btn checkout-pdf-btn prominent" onClick={()=>void exportCheckoutPdf()} disabled={exportingCheckoutPdf||todayCheckoutCount===0}><FilePdf size={18}/>{exportingCheckoutPdf?"جاري إنشاء الكشف…":"تنزيل كشف خروج اليوم PDF"}</button>:null}
+      </div>
     </section>:null}
     <section className="panel rooms-directory">
       <div className="directory-toolbar"><div className="search wide"><MagnifyingGlass size={17}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ابحث باسم النزيل أو الجوال أو الغرفة"/></div><select value={scope} onChange={e=>setScope(e.target.value)}><option value="all">كل الإقامات</option><option value="in_house">داخل الفندق</option><option value="checked_out">غادر</option><option value="cancelled">ملغاة</option></select></div>
       {loading?<div className="rooms-state">جاري تحميل النزلاء…</div>:error?<div className="rooms-state error">{error}</div>:
-      <div className="rooms-table-wrap"><table className="rooms-table"><thead><tr><th>النزيل</th><th>الغرفة</th><th>الحالة</th><th>الدخول</th><th>الخروج المتوقع</th><th>الخروج الفعلي</th><th>الطلبات</th><th>الإجراءات</th></tr></thead><tbody>{filtered.map(x=><tr key={x.id}><td><b>{x.guest_name}</b><small><Phone size={11}/> {checkoutView?(x.guest_phone||"غير مسجل"):phone(x.guest_phone)}</small></td><td><b>{x.room_number}</b><small>{x.room_type}</small></td><td><span className={"table-status "+(x.status==="in_house"?"occupied":"available")}>{x.status==="in_house"?"داخل الفندق":x.status==="checked_out"?"غادر":"ملغاة"}</span></td><td>{d(x.checkin_at)}</td><td>{d(x.expected_checkout_at)}</td><td>{d(x.actual_checkout_at)}</td><td>{x.total_requests||0}{Number(x.open_requests||0)>0?<small>{x.open_requests} مفتوح</small>:null}</td><td>{role?<div className="guest-row-actions">
+      <div className="rooms-table-wrap"><table className="rooms-table"><thead><tr><th>النزيل</th><th>الغرفة</th><th>الحالة</th><th>الدخول</th><th>الخروج المتوقع</th><th>الخروج الفعلي</th><th>الطلبات</th><th>الإجراءات</th></tr></thead><tbody>{filtered.map(x=><tr key={x.id}><td><b>{x.guest_name}</b><small><Phone size={11}/> {checkoutSection?(x.guest_phone||"غير مسجل"):phone(x.guest_phone)}</small></td><td><b>{x.room_number}</b><small>{x.room_type}</small></td><td><span className={"table-status "+(x.status==="in_house"?"occupied":"available")}>{x.status==="in_house"?"داخل الفندق":x.status==="checked_out"?"غادر":"ملغاة"}</span></td><td>{d(x.checkin_at)}</td><td>{d(x.expected_checkout_at)}</td><td>{d(x.actual_checkout_at)}</td><td>{x.total_requests||0}{Number(x.open_requests||0)>0?<small>{x.open_requests} مفتوح</small>:null}</td><td>{role?<div className="guest-row-actions">
   <button className="detail-button compact" onClick={()=>setDetailId(x.id)}><Eye size={14}/> فتح الملف</button>
   {role==="admin"?(deleteId!==x.id
     ?<button className="guest-delete-btn" onClick={()=>{setDeleteError("");setDeleteId(x.id)}}><Trash size={13}/> حذف</button>
