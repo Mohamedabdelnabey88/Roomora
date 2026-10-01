@@ -1196,3 +1196,27 @@ button,a,input,select{font-family:inherit}
 }
 .card-delete-confirm button.danger{background:#a94844;color:#fff;border-color:#a94844}
 .card-delete-confirm button:disabled{opacity:.55;cursor:not-allowed}
+
+
+/* Admin-only guest/stay permanent deletion */
+.guest-row-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.guest-delete-btn{
+  min-height:32px;padding:0 10px;border:1px solid #edc9c5;border-radius:9px;background:#fffafa;
+  color:#a34d49;font:inherit;font-size:8px;font-weight:800;cursor:pointer;
+  display:inline-flex;align-items:center;gap:5px
+}
+.guest-delete-btn:hover{background:#fff1ef;border-color:#dba8a3}
+.guest-delete-confirm{
+  min-width:260px;padding:9px;border:1px solid #efd2cf;border-radius:10px;background:#fff3f1
+}
+.guest-delete-confirm>span{display:flex;align-items:center;gap:5px;font-size:8px;color:#934744}
+.guest-delete-confirm>div{display:flex;gap:6px;margin-top:8px}
+.guest-delete-confirm button{
+  min-height:30px;padding:0 9px;border:1px solid #ddd6d4;border-radius:8px;background:#fff;
+  font:inherit;font-size:8px;font-weight:800;cursor:pointer
+}
+.guest-delete-confirm button.danger{background:#a94844;color:#fff;border-color:#a94844}
+.guest-delete-confirm small{display:block;margin-top:7px;color:#a34845;font-size:7px}
+.guest-danger-zone{
+  margin-top:16px;padding:14px;border:1px solid #f0d8d6;border-radius:16px;background:linear-gradient(145deg,#fffafa,#fff)
+}

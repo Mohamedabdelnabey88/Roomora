@@ -15,3 +15,23 @@ export async function GET(_request:Request, context:{params:Promise<{id:string}>
   const payload=await response.json().catch(()=>({error:"invalid_response"}));
   return NextResponse.json(payload,{status:response.status});
 }
+
+
+export async function DELETE(_request:Request, context:{params:Promise<{id:string}>}) {
+  const jar=await cookies();
+  const token=jar.get("roomora_session")?.value || "";
+  if(!token) return NextResponse.json({error:"unauthorized"},{status:401});
+  const {id}=await context.params;
+  try{
+    const response=await fetch(API_BASE+"/api/stays/"+encodeURIComponent(id),{
+      method:"DELETE",
+      headers:{authorization:"Bearer "+token},
+      cache:"no-store"
+    });
+    const payload=await response.json().catch(()=>({error:"invalid_response"}));
+    return NextResponse.json(payload,{status:response.status});
+  }catch(error){
+    console.error("stay_delete_proxy_failed",error);
+    return NextResponse.json({error:"backend_unreachable"},{status:502});
+  }
+}

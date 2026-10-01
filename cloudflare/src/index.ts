@@ -542,6 +542,74 @@ export default {
       return json({request:detail,lines:lines.results,approval:approval || null,timeline:timeline.results});
     }
 
+    if (url.pathname.match(/^\/api\/stays\/[^/]+$/) && request.method === "DELETE") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+      if (actor.role !== "admin") return json({ error:"forbidden" }, { status:403 });
+
+      const stayId = url.pathname.split("/")[3] || "";
+      const existing = await env.DB.prepare(`
+        SELECT s.id, s.room_id, s.guest_name, s.guest_phone, s.status,
+               s.checkin_at, s.expected_checkout_at, s.actual_checkout_at,
+               r.number AS room_number
+        FROM stays s
+        JOIN rooms r ON r.id = s.room_id
+        WHERE s.id = ?1
+        LIMIT 1
+      `).bind(stayId).first<{
+        id:string; room_id:string; guest_name:string; guest_phone:string|null;
+        status:string; checkin_at:string; expected_checkout_at:string;
+        actual_checkout_at:string|null; room_number:string;
+      }>();
+
+      if (!existing) return json({ error:"stay_not_found" }, { status:404 });
+
+      const requestCount = await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM service_requests WHERE stay_id = ?1"
+      ).bind(stayId).first<{count:number}>();
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          DELETE FROM approval_requests
+          WHERE service_request_id IN (
+            SELECT id FROM service_requests WHERE stay_id = ?1
+          )
+        `).bind(stayId),
+        env.DB.prepare("DELETE FROM service_requests WHERE stay_id = ?1").bind(stayId),
+        env.DB.prepare("DELETE FROM stay_extensions WHERE stay_id = ?1").bind(stayId),
+        ...(existing.status === "in_house"
+          ? [env.DB.prepare(`
+              UPDATE rooms
+              SET operational_status = 'available', updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?1
+            `).bind(existing.room_id)]
+          : []),
+        env.DB.prepare("DELETE FROM stays WHERE id = ?1").bind(stayId)
+      ]);
+
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+        VALUES (?1, 'stay_deleted', 'stay', ?2, ?3)
+      `).bind(actor.id, stayId, JSON.stringify({
+        guestName: existing.guest_name,
+        guestPhone: existing.guest_phone,
+        roomNumber: existing.room_number,
+        previousStatus: existing.status,
+        checkinAt: existing.checkin_at,
+        expectedCheckoutAt: existing.expected_checkout_at,
+        actualCheckoutAt: existing.actual_checkout_at,
+        deletedRequests: Number(requestCount?.count || 0),
+        permanent: true
+      })).run();
+
+      return json({
+        ok:true,
+        deletedId:stayId,
+        roomReleased:existing.status === "in_house",
+        deletedRequests:Number(requestCount?.count || 0)
+      });
+    }
+
     if (url.pathname.match(/^\/api\/stays\/[^/]+$/) && request.method === "GET") {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error:"unauthorized" }, { status:401 });
