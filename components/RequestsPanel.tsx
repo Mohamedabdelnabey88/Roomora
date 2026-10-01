@@ -18,7 +18,7 @@ export default function RequestsPanel(){
   const [status,setStatus]=useState("all");
   const [scope,setScope]=useState<"active"|"completed"|"all">("active");
   const [quickFilter,setQuickFilter]=useState<"active"|"approvals"|"late"|"completed"|null>("active");
-  const [detailId,setDetailId]=useState<string|null>(null);
+  const [detailId,setDetailId]=useState<string|null>(null);\n  const [deletingId,setDeletingId]=useState<string|null>(null);\n  const [deleteConfirmId,setDeleteConfirmId]=useState<string|null>(null);\n  const [deleteError,setDeleteError]=useState("");
 
   async function load(silent=false){
     if(!silent)setLoading(true);
@@ -40,6 +40,28 @@ export default function RequestsPanel(){
     window.addEventListener("focus",refresh);
     return()=>{window.clearInterval(timer);window.removeEventListener("focus",refresh);unsubscribe()}
   },[]);
+
+  async function deleteRequest(id:string){
+    if(role!=="admin"||deletingId)return;
+    setDeletingId(id);setDeleteError("");
+    try{
+      const response=await fetch("/api/requests/"+encodeURIComponent(id),{method:"DELETE"});
+      const payload=await response.json().catch(()=>({}));
+      const map:Record<string,string>={
+        forbidden:"الحذف النهائي متاح لمدير النظام فقط.",
+        request_not_found:"الطلب لم يعد موجودًا.",
+        backend_unreachable:"تعذر الاتصال بخدمة Roomora الخلفية."
+      };
+      if(!response.ok)throw new Error(map[payload.error]||"تعذر حذف الطلب نهائيًا.");
+      setDeleteConfirmId(null);
+      if(detailId===id)setDetailId(null);
+      await load(true);
+    }catch(e){
+      setDeleteError(e instanceof Error?e.message:"تعذر حذف الطلب نهائيًا.");
+    }finally{
+      setDeletingId(null);
+    }
+  }
 
   const ageMinutes=(value:string)=>Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/60000));
   const age=(value:string)=>{const m=ageMinutes(value);return m<1?"الآن":m<60?"منذ "+m+" د":"منذ "+Math.floor(m/60)+" س"};
@@ -104,7 +126,19 @@ export default function RequestsPanel(){
           <div className="request-items-copy">{item.items||"طلب غرفة"}</div>
           <div className="request-state-row"><span className={"table-status "+item.status}>{statusLabels[item.status]||item.status}</span><small className={"sla-chip "+sla}>{sla==="critical"?"حرج":sla==="warning"?"تنبيه":"ضمن SLA"}</small></div>
           {item.approval_reason?<div className="approval-reason"><ShieldCheck size={14}/>{item.approval_reason}</div>:null}
-          <div className="request-card-footer"><button className="detail-button" onClick={()=>setDetailId(item.id)}>التفاصيل الكاملة</button><RequestActions request={item} role={role} onChanged={()=>load(true)}/></div>
+          <div className="request-card-footer">
+            <button className="detail-button" onClick={()=>setDetailId(item.id)}>التفاصيل الكاملة</button>
+            <RequestActions request={item} role={role} onChanged={()=>load(true)}/>
+            {role==="admin"?<div className="card-delete-zone">
+              {deleteConfirmId!==item.id
+                ?<button type="button" className="card-delete-btn" onClick={()=>{setDeleteError("");setDeleteConfirmId(item.id)}}>حذف الطلب نهائيًا</button>
+                :<div className="card-delete-confirm">
+                  <span>تأكيد حذف الطلب نهائيًا؟</span>
+                  <div><button type="button" onClick={()=>setDeleteConfirmId(null)} disabled={deletingId===item.id}>تراجع</button><button type="button" className="danger" onClick={()=>void deleteRequest(item.id)} disabled={deletingId===item.id}>{deletingId===item.id?"جاري الحذف…":"نعم، حذف"}</button></div>
+                </div>}
+              {deleteError&&deleteConfirmId===item.id?<div className="inline-action-error">{deleteError}</div>:null}
+            </div>:null}
+          </div>
         </article>
       })}</div>}
     </section>
