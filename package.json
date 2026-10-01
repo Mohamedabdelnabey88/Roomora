@@ -15,8 +15,8 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "html2canvas": "1.4.1",
-    "jspdf": "3.0.3",
-    "fflate": "0.8.2"
+    "fflate": "0.8.2",
+    "pdf-lib": "1.17.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

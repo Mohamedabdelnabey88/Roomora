@@ -254,7 +254,7 @@ export default function ReportsPanel(){
       add("xl/worksheets/sheet3.xml",sheetXml(timelineRows,[25,18]));
 
       const zipped=zipSync(files,{level:6});
-      saveBlob(new Blob([zipped],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.xlsx`);
+      const zippedBuffer=zipped.buffer.slice(zipped.byteOffset,zipped.byteOffset+zipped.byteLength) as ArrayBuffer;\n      saveBlob(new Blob([zippedBuffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.xlsx`);
     }catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء ملف Excel")}
     finally{setExporting(null)}
   }
@@ -264,13 +264,17 @@ export default function ReportsPanel(){
     if(!node||!itemTotals.length){setError("لا توجد بيانات لتصديرها ضمن الفترة المحددة.");return}
     setExporting("pdf");setError("");
     try{
-      const [{default:html2canvas},{jsPDF}]=await Promise.all([import("html2canvas"),import("jspdf")]);
-      const canvas=await html2canvas(node,{scale:2.2,useCORS:true,backgroundColor:"#ffffff",logging:false,windowWidth:node.scrollWidth,windowHeight:node.scrollHeight});
-      const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4",compress:true});
-      const pageW=210,pageH=297,margin=10,usableW=pageW-margin*2,usableH=pageH-margin*2;
-      const pxPerMm=canvas.width/usableW;
-      const pageSlicePx=Math.floor(usableH*pxPerMm);
-      let offset=0,page=0;
+      const [{default:html2canvas},{PDFDocument}]=await Promise.all([import("html2canvas"),import("pdf-lib")]);
+      const canvas=await html2canvas(node,{
+        scale:2.2,useCORS:true,backgroundColor:"#ffffff",logging:false,
+        windowWidth:node.scrollWidth,windowHeight:node.scrollHeight
+      });
+      const pdf=await PDFDocument.create();
+      const pageW=595.28,pageH=841.89,margin=28;
+      const usableW=pageW-margin*2,usableH=pageH-margin*2;
+      const pxPerPt=canvas.width/usableW;
+      const pageSlicePx=Math.floor(usableH*pxPerPt);
+      let offset=0;
       while(offset<canvas.height){
         const sliceH=Math.min(pageSlicePx,canvas.height-offset);
         const part=document.createElement("canvas");
@@ -279,12 +283,19 @@ export default function ReportsPanel(){
         if(!ctx)throw new Error("تعذر تجهيز صفحة PDF");
         ctx.fillStyle="#ffffff";ctx.fillRect(0,0,part.width,part.height);
         ctx.drawImage(canvas,0,offset,canvas.width,sliceH,0,0,canvas.width,sliceH);
-        if(page>0)pdf.addPage();
-        const hMm=sliceH/pxPerMm;
-        pdf.addImage(part.toDataURL("image/jpeg",0.94),"JPEG",margin,margin,usableW,hMm,undefined,"FAST");
-        offset+=sliceH;page++;
+        const dataUrl=part.toDataURL("image/jpeg",0.94);
+        const raw=atob(dataUrl.split(",")[1]||"");
+        const bytes=new Uint8Array(raw.length);
+        for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+        const image=await pdf.embedJpg(bytes);
+        const hPt=sliceH/pxPerPt;
+        const page=pdf.addPage([pageW,pageH]);
+        page.drawImage(image,{x:margin,y:pageH-margin-hPt,width:usableW,height:hPt});
+        offset+=sliceH;
       }
-      pdf.save(`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.pdf`);
+      const pdfBytes=await pdf.save({useObjectStreams:true});
+      const buffer=pdfBytes.buffer.slice(pdfBytes.byteOffset,pdfBytes.byteOffset+pdfBytes.byteLength) as ArrayBuffer;
+      saveBlob(new Blob([buffer],{type:"application/pdf"}),`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.pdf`);
     }catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء ملف PDF")}
     finally{setExporting(null)}
   }
