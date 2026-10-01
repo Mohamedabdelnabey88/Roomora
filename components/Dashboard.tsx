@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, Bed, Buildings, CalendarCheck, ChartBar, CheckCircle, Clock, DoorOpen,
@@ -25,6 +26,7 @@ const labels = {
 } as const;
 
 export default function Dashboard() {
+  const router=useRouter();
   const [activeFloor, setActiveFloor] = useState<number | "all">("all");
   const [selected, setSelected] = useState<Room | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -272,7 +274,7 @@ export default function Dashboard() {
         <Stat icon={<Buildings/>} label="إجمالي الغرف" value={String(rooms.length)} hint="4 أنواع سكن" active={statusFilter==="all"} onClick={()=>setStatusFilter("all")} />
         <Stat icon={<DoorOpen/>} label="الغرف المشغولة" value={String(occupied)} hint="الإشغال الحالي" accent active={statusFilter==="occupied"} onClick={()=>setStatusFilter("occupied")} />
         <Stat icon={<CheckCircle/>} label="الغرف المتاحة" value={String(available)} hint="جاهزة للتسكين" active={statusFilter==="available"} onClick={()=>setStatusFilter("available")} />
-        <Stat icon={<CalendarCheck/>} label="خروج اليوم" value={String(checkoutCount)} hint="حسب يوم الفندق" active={statusFilter==="checkout"} onClick={()=>setStatusFilter("checkout")} />
+        <Stat icon={<CalendarCheck/>} label="خروج اليوم" value={String(checkoutCount)} hint="عرض سجل الخروج والكشف PDF" active={false} onClick={()=>router.push("/guests?view=checkout-today")} />
       </section>
       <div className="live-sync-row"><span className="live-dot"/> بيانات مباشرة من D1 {lastSync ? "· آخر تحديث "+lastSync.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit",second:"2-digit"}) : ""}</div>
 

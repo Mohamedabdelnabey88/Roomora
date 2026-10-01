@@ -1251,3 +1251,22 @@ button,a,input,select{font-family:inherit}
 @media(max-width:720px){
   .checkout-pdf-btn{width:100%;margin-top:10px}
 }
+
+
+/* Checkout today entry point */
+.checkout-today-banner{
+  display:flex;align-items:center;justify-content:space-between;gap:18px;
+  margin-bottom:16px;padding:18px 20px;border:1px solid #d8e5df;border-radius:18px;
+  background:linear-gradient(135deg,#f5fbf8,#ffffff);
+  box-shadow:0 8px 28px rgba(20,47,38,.045)
+}
+.checkout-today-copy{display:flex;align-items:center;gap:12px}
+.checkout-today-copy>svg{width:44px;height:44px;padding:10px;border-radius:13px;background:#e8f4ef;color:#155f4b}
+.checkout-today-copy h2{margin:3px 0 2px;font-size:18px}
+.checkout-today-copy p{margin:0;font-size:9px;color:#718079}
+.checkout-today-copy p b{color:#155f4b;font-size:12px}
+.checkout-pdf-btn.prominent{min-width:230px}
+@media(max-width:720px){
+  .checkout-today-banner{display:block}
+  .checkout-pdf-btn.prominent{width:100%;margin-top:12px}
+}

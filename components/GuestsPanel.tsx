@@ -1,6 +1,7 @@
 "use client";
 import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight,MagnifyingGlass,Phone,Eye,Trash,WarningCircle,FilePdf } from "@phosphor-icons/react";
 import StayDetailDialog from "@/components/StayDetailDialog";
 import { getHotelBusinessDay } from "@/lib/business-day";
@@ -12,6 +13,8 @@ type StayRow={
 };
 
 export default function GuestsPanel(){
+  const searchParams=useSearchParams();
+  const checkoutView=searchParams.get("view")==="checkout-today";
   const [rows,setRows]=useState<StayRow[]>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
@@ -36,6 +39,10 @@ export default function GuestsPanel(){
   }
 
   useEffect(()=>{void load();},[]);
+
+  useEffect(()=>{
+    if(checkoutView){setScope("checked_out");setQ("");}
+  },[checkoutView]);
 
   async function deleteStay(id:string){
     if(role!=="admin"||deletingId)return;
@@ -178,6 +185,8 @@ export default function GuestsPanel(){
     }
   }
 
+  const todayCheckoutCount=useMemo(()=>todayCheckoutRows().length,[rows]);
+
   const filtered=useMemo(()=>rows.filter(x=>{
     const text=(x.guest_name+" "+(x.guest_phone||"")+" "+x.room_number).toLowerCase();
     return (scope==="all"||x.status===scope)&&(!q||text.includes(q.toLowerCase()));
@@ -189,6 +198,10 @@ export default function GuestsPanel(){
   return <main className="settings-page">
     <header className="settings-header premium-page-head"><div><Link href="/" className="back-link"><ArrowRight size={16}/> العودة للوحة التشغيل</Link><span className="section-kicker">GUEST DIRECTORY</span><h1>النزلاء والإقامات</h1><p>السجل الحالي والتاريخي للنزلاء المرتبط بالإقامات والغرف.</p></div><button className="primary-btn checkout-pdf-btn" onClick={()=>void exportCheckoutPdf()} disabled={exportingCheckoutPdf}><FilePdf size={18}/>{exportingCheckoutPdf?"جاري إنشاء الكشف…":"كشف خروج اليوم PDF"}</button></header>
     {exportError?<div className="login-error page-error">{exportError}</div>:null}
+    {checkoutView?<section className="checkout-today-banner">
+      <div className="checkout-today-copy"><CalendarCheck size={24}/><div><span className="section-kicker">TODAY CHECKOUT</span><h2>خروج اليوم</h2><p>عدد حالات الخروج المكتملة في يوم الفندق الحالي: <b>{todayCheckoutCount}</b></p></div></div>
+      <button className="primary-btn checkout-pdf-btn prominent" onClick={()=>void exportCheckoutPdf()} disabled={exportingCheckoutPdf||todayCheckoutCount===0}><FilePdf size={18}/>{exportingCheckoutPdf?"جاري إنشاء الكشف…":"تنزيل كشف خروج اليوم PDF"}</button>
+    </section>:null}
     <section className="panel rooms-directory">
       <div className="directory-toolbar"><div className="search wide"><MagnifyingGlass size={17}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ابحث باسم النزيل أو الجوال أو الغرفة"/></div><select value={scope} onChange={e=>setScope(e.target.value)}><option value="all">كل الإقامات</option><option value="in_house">داخل الفندق</option><option value="checked_out">غادر</option><option value="cancelled">ملغاة</option></select></div>
       {loading?<div className="rooms-state">جاري تحميل النزلاء…</div>:error?<div className="rooms-state error">{error}</div>:
