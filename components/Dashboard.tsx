@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -40,6 +40,8 @@ export default function Dashboard() {
   const [actionError, setActionError] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all"|Room["status"]>("all");
   const [lastSync, setLastSync] = useState<Date|null>(null);
+  const roomsSnapshotRef = useRef("");
+  const requestsSnapshotRef = useRef("");
 
   async function loadRooms(silent=false) {
     if(!silent) setLoadingRooms(true);
@@ -51,20 +53,33 @@ export default function Dashboard() {
       })
       .then((payload) => {
         const mapped = payload.map(mapApiRoom);
-        setRooms(mapped);
-        setSelected(prev => prev ? (mapped.find(room => room.id === prev.id) || null) : null);
-        setDataError(null);
-        setLastSync(new Date());
+        const snapshot = JSON.stringify(mapped);
+        const changed = roomsSnapshotRef.current !== snapshot;
+        if (changed) {
+          roomsSnapshotRef.current = snapshot;
+          setRooms(mapped);
+          setSelected(prev => prev ? (mapped.find(room => room.id === prev.id) || null) : null);
+          setLastSync(new Date());
+        }
+        if (dataError) setDataError(null);
       })
-      .catch(() => setDataError("تعذر الاتصال بقاعدة بيانات الفندق"))
+      .catch(() => {
+        if(!silent) setDataError("تعذر الاتصال بقاعدة بيانات الفندق");
+      })
       .finally(() => { if(!silent) setLoadingRooms(false); });
   }
 
   async function loadRequests() {
     const response = await fetch("/api/requests",{cache:"no-store"});
     if (response.status === 401) { window.location.href="/login"; return; }
+    if(!response.ok) return;
     const payload = await response.json().catch(()=>[]);
-    setActiveRequests(Array.isArray(payload)?payload:[]);
+    const next = Array.isArray(payload)?payload:[];
+    const snapshot = JSON.stringify(next);
+    if (requestsSnapshotRef.current !== snapshot) {
+      requestsSnapshotRef.current = snapshot;
+      setActiveRequests(next);
+    }
   }
 
   async function loadCurrentUser() {
