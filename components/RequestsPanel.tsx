@@ -108,6 +108,6 @@ export default function RequestsPanel(){
         </article>
       })}</div>}
     </section>
-    <RequestDetailDialog requestId={detailId} onClose={()=>setDetailId(null)}/>
+    <RequestDetailDialog requestId={detailId} role={role} onClose={()=>setDetailId(null)} onDeleted={async()=>{setDetailId(null);await load(true)}}/>
   </main>;
 }

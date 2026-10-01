@@ -12,7 +12,7 @@ type SessionUser = {
 
 const cors = {
   "access-control-allow-origin": "https://roomora-lac.vercel.app",
-  "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+  "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
   "access-control-allow-headers": "content-type,authorization,x-setup-key"
 };
 
@@ -865,6 +865,47 @@ export default {
       ]);
 
       return json({ok:true,status:requestStatus});
+    }
+
+    if (url.pathname.match(/^\/api\/requests\/[^/]+$/) && request.method === "DELETE") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+      if (actor.role !== "admin") return json({ error:"forbidden" }, { status:403 });
+
+      const requestId = url.pathname.split("/")[3] || "";
+      const existing = await env.DB.prepare(`
+        SELECT sr.id, sr.status, sr.business_day, sr.requested_at,
+               r.number AS room_number, s.guest_name
+        FROM service_requests sr
+        JOIN rooms r ON r.id = sr.room_id
+        JOIN stays s ON s.id = sr.stay_id
+        WHERE sr.id = ?1
+        LIMIT 1
+      `).bind(requestId).first<{
+        id:string; status:string; business_day:string; requested_at:string;
+        room_number:string; guest_name:string;
+      }>();
+
+      if (!existing) return json({ error:"request_not_found" }, { status:404 });
+
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM approval_requests WHERE service_request_id = ?1").bind(requestId),
+        env.DB.prepare("DELETE FROM service_requests WHERE id = ?1").bind(requestId)
+      ]);
+
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+        VALUES (?1, 'service_request_deleted', 'service_request', ?2, ?3)
+      `).bind(actor.id, requestId, JSON.stringify({
+        roomNumber: existing.room_number,
+        guestName: existing.guest_name,
+        previousStatus: existing.status,
+        businessDay: existing.business_day,
+        requestedAt: existing.requested_at,
+        permanent: true
+      })).run();
+
+      return json({ ok:true, deletedId:requestId });
     }
 
     if (url.pathname === "/api/stays" && request.method === "GET") {

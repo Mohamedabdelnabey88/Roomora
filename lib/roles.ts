@@ -14,6 +14,7 @@ export const roleCapabilities:Capability[]=[
   {key:"requests.manage",label:"تشغيل طلبات الغرف",description:"إنشاء الطلب واستلامه وبدء التجهيز والتسليم أو الإلغاء.",reception:true,admin:true},
   {key:"reports.view",label:"عرض التقارير",description:"مشاهدة مؤشرات التشغيل وتصدير التقرير.",reception:true,admin:true},
   {key:"approvals.decide",label:"قرارات تجاوز الحدود",description:"الموافقة أو الرفض عندما يتجاوز الطلب الحدود.",reception:false,admin:true},
+  {key:"requests.delete",label:"الحذف النهائي للطلبات",description:"حذف طلب خدمة نهائيًا مع أصنافه والموافقة المرتبطة به.",reception:false,admin:true},
   {key:"guests.private",label:"ملف الإقامة التفصيلي",description:"فتح الملف الإداري الكامل وسجل التمديدات والطلبات.",reception:false,admin:true},
   {key:"employees.manage",label:"إدارة الموظفين",description:"إنشاء الحسابات وتفعيلها أو تعطيلها.",reception:false,admin:true},
   {key:"limits.manage",label:"تعديل حدود المستهلكات",description:"تغيير حد الطلب واليوم والإقامة لكل صنف.",reception:false,admin:true}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect,useMemo,useState } from "react";
-import { Clock,Package,ShieldCheck,User,X } from "@phosphor-icons/react";
+import { Clock,Package,ShieldCheck,Trash,User,WarningCircle,X } from "@phosphor-icons/react";
 import ModalFrame from "@/components/ui/ModalFrame";
 
 type Detail={
@@ -15,9 +15,11 @@ const statusLabel:Record<string,string>={new:"جديد",acknowledged:"تم ال�
 
 function fmt(v?:string|null){return !v?"—":new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(v))}
 
-export default function RequestDetailDialog({requestId,onClose}:{requestId:string|null;onClose:()=>void}){
+export default function RequestDetailDialog({requestId,role,onClose,onDeleted}:{requestId:string|null;role:"admin"|"reception"|null;onClose:()=>void;onDeleted:()=>Promise<void>|void}){
   const [data,setData]=useState<Detail|null>(null);
   const [error,setError]=useState("");
+  const [deleting,setDeleting]=useState(false);
+  const [confirmDelete,setConfirmDelete]=useState(false);
 
   useEffect(()=>{
     if(!requestId)return;
@@ -27,6 +29,25 @@ export default function RequestDetailDialog({requestId,onClose}:{requestId:strin
       .then(({ok,p})=>{if(!ok||!p)setError("تعذر تحميل تفاصيل الطلب");else setData(p)})
       .catch(()=>setError("تعذر تحميل تفاصيل الطلب"));
   },[requestId]);
+
+  async function deleteRequest(){
+    if(!requestId||role!=="admin"||deleting)return;
+    setDeleting(true);setError("");
+    try{
+      const response=await fetch("/api/requests/"+encodeURIComponent(requestId),{method:"DELETE"});
+      const payload=await response.json().catch(()=>({}));
+      const map:Record<string,string>={
+        forbidden:"الحذف النهائي متاح لمدير النظام فقط.",
+        request_not_found:"الطلب لم يعد موجودًا.",
+        backend_unreachable:"تعذر الاتصال بخدمة Roomora الخلفية."
+      };
+      if(!response.ok)throw new Error(map[payload.error]||"تعذر حذف الطلب نهائيًا.");
+      await onDeleted();
+    }catch(e){
+      setError(e instanceof Error?e.message:"تعذر حذف الطلب نهائيًا.");
+      setDeleting(false);setConfirmDelete(false);
+    }
+  }
 
   const timeline=useMemo(()=>{
     if(!data)return[];
@@ -82,6 +103,16 @@ export default function RequestDetailDialog({requestId,onClose}:{requestId:strin
           <div className="detail-card-title"><Clock size={17}/><div><b>سجل الحركة</b><span>Audit trail للطلب</span></div></div>
           {timeline.length?<div className="pro-timeline">{timeline.map((event,i)=><div key={i}><i/><div><b>{event.label}</b><span>{fmt(event.created_at)} · {event.actor_name||"النظام"}</span></div></div>)}</div>:<p className="detail-empty">لا توجد أحداث إضافية.</p>}
         </section>
+
+        {role==="admin"?<section className="request-danger-zone">
+          <div className="danger-zone-copy"><Trash size={18}/><div><b>حذف الطلب نهائيًا</b><span>يحذف الطلب وكل أصنافه والموافقة المرتبطة به من قاعدة البيانات. لا يمكن التراجع عن هذه العملية.</span></div></div>
+          {!confirmDelete?
+            <button type="button" className="danger-delete-btn" onClick={()=>setConfirmDelete(true)}><Trash size={15}/> حذف نهائي</button>
+            :<div className="delete-confirm-box">
+              <div><WarningCircle size={17}/><span>تأكيد أخير: سيتم حذف الطلب #{data.request.id.slice(0,8).toUpperCase()} نهائيًا.</span></div>
+              <div><button type="button" className="secondary-btn" onClick={()=>setConfirmDelete(false)} disabled={deleting}>تراجع</button><button type="button" className="danger-delete-btn solid" onClick={()=>void deleteRequest()} disabled={deleting}>{deleting?"جاري الحذف…":"نعم، احذف نهائيًا"}</button></div>
+            </div>}
+        </section>:null}
       </>}
       </div>
     </ModalFrame>;
