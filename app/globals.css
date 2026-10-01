@@ -1243,3 +1243,11 @@ button,a,input,select{font-family:inherit}
 .stay-edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #e8efec}
 .stay-edit-actions button{min-width:105px}
 @media(max-width:620px){.stay-file-title-row{display:block}.edit-stay-btn{margin:8px 0}.stay-edit-grid{grid-template-columns:1fr}}
+
+
+/* Daily checkout PDF */
+.checkout-pdf-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+.checkout-pdf-btn:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:720px){
+  .checkout-pdf-btn{width:100%;margin-top:10px}
+}
