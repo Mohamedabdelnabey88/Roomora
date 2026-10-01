@@ -109,7 +109,8 @@ export default function GuestsPanel(){
             <td class="room">${esc(row.room_number)}</td>
             <td class="guest">${esc(row.guest_name)}</td>
             <td class="phone">${esc(row.guest_phone||"غير مسجل")}</td>
-            <td class="notes">&nbsp;</td>
+            <td class="decision"><span class="check-box"></span></td>
+            <td class="decision"><span class="check-box"></span></td>
           </tr>
         `).join("");
 
@@ -135,10 +136,12 @@ export default function GuestsPanel(){
             tr:nth-child(even) td{background:#fbfcfc}
             th:nth-child(1),td:nth-child(1){width:5%}
             th:nth-child(2),td:nth-child(2){width:12%}
-            th:nth-child(3),td:nth-child(3){width:28%}
+            th:nth-child(3),td:nth-child(3){width:29%}
             th:nth-child(4),td:nth-child(4){width:22%}
-            th:nth-child(5),td:nth-child(5){width:33%}
-            .idx,.room,.phone{text-align:center}.room{font-weight:800;font-size:12px}.guest{font-weight:700}.notes{background:#fff!important}
+            th:nth-child(5),td:nth-child(5){width:16%}
+            th:nth-child(6),td:nth-child(6){width:16%}
+            .idx,.room,.phone,.decision{text-align:center}.room{font-weight:800;font-size:12px}.guest{font-weight:700}
+            .decision{background:#fff!important}.check-box{display:inline-block;width:18px;height:18px;border:2px solid #7f8f88;border-radius:4px;background:#fff}
             .foot{display:flex;justify-content:space-between;margin-top:auto;padding-top:7px;border-top:1px solid #e1e8e5;color:#89958f;font-size:8px}
           </style>
           <div class="sheet">
@@ -152,10 +155,10 @@ export default function GuestsPanel(){
             </div>
             <div class="summary"><div>إجمالي المغادرين المتوقعين اليوم <b>${checkoutRows.length}</b></div><div>المعروض في هذه الصفحة <b>${pageRows.length}</b></div></div>
             <table>
-              <thead><tr><th>#</th><th>رقم الغرفة</th><th>اسم العميل</th><th>رقم الهاتف</th><th>ملاحظات</th></tr></thead>
+              <thead><tr><th>#</th><th>رقم الغرفة</th><th>اسم العميل</th><th>رقم الهاتف</th><th>خروج</th><th>تمديد</th></tr></thead>
               <tbody>${body}</tbody>
             </table>
-            <div class="foot"><span>Roomora · كشف خروج يومي</span><span>بحد أقصى 15 نزيل في الصفحة · الملاحظات للكتابة اليدوية</span></div>
+            <div class="foot"><span>Roomora · كشف خروج يومي</span><span>بحد أقصى 15 نزيل في الصفحة · ضع علامة ✓ أمام خروج أو تمديد</span></div>
           </div>`;
         document.body.appendChild(host);
 
