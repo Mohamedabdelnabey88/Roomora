@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { CalendarBlank, Phone, User, X } from "@phosphor-icons/react";
+import { Bed, Buildings, CalendarBlank, CheckCircle, Phone, User, X } from "@phosphor-icons/react";
 import type { Room } from "@/lib/data";
 import ModalFrame from "@/components/ui/ModalFrame";
 
@@ -15,6 +15,77 @@ function defaultCheckout() {
   d.setDate(d.getDate()+1);
   d.setHours(12,0,0,0);
   return toLocalInput(d);
+}
+
+
+const roomStateLabel:Record<string,string>={
+  available:"متاحة",
+  occupied:"مشغولة",
+  checkout:"خروج اليوم",
+  request:"طلب مفتوح",
+  cleaning:"تنظيف",
+  maintenance:"صيانة"
+};
+
+export function RoomCheckinPicker({
+  open,
+  rooms,
+  onClose,
+  onSelect
+}:{
+  open:boolean;
+  rooms:Room[];
+  onClose:()=>void;
+  onSelect:(room:Room)=>void;
+}) {
+  const [query,setQuery]=useState("");
+  const [floor,setFloor]=useState<number|"all">("all");
+
+  useEffect(()=>{
+    if(open){setQuery("");setFloor("all");}
+  },[open]);
+
+  const filtered=useMemo(()=>rooms.filter(room=>
+    (floor==="all"||room.floor===floor) &&
+    (!query||room.number.includes(query)||(room.guest||"").includes(query))
+  ),[rooms,floor,query]);
+
+  const availableCount=rooms.filter(room=>!room.stayId&&room.status==="available").length;
+
+  return <ModalFrame open={open} onClose={onClose} className="checkin-picker-modal" ariaLabelledBy="checkin-picker-title">
+    <button className="close" onClick={onClose}><X size={19}/></button>
+    <div className="checkin-picker-head">
+      <div><span className="section-kicker">ROOM ASSIGNMENT</span><h2 id="checkin-picker-title">تسجيل دخول نزيل</h2><p>اختر الغرفة أولًا، ثم أدخل بيانات النزيل والحجز.</p></div>
+      <div className="availability-summary"><CheckCircle size={18}/><div><b>{availableCount}</b><span>غرفة متاحة الآن</span></div></div>
+    </div>
+
+    <div className="checkin-picker-tools">
+      <div className="search wide"><Buildings size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="ابحث برقم الغرفة أو اسم النزيل"/></div>
+      <select value={String(floor)} onChange={e=>setFloor(e.target.value==="all"?"all":Number(e.target.value))}>
+        <option value="all">كل الأدوار</option>
+        <option value="0">الأرضي</option><option value="1">الأول</option><option value="2">الثاني</option><option value="3">الثالث</option><option value="4">الرابع</option>
+      </select>
+    </div>
+
+    <div className="checkin-room-list">
+      {filtered.map(room=>{
+        const selectable=!room.stayId&&room.status==="available";
+        return <button
+          type="button"
+          key={room.id}
+          className={"checkin-room-option "+(selectable?"available":"unavailable")}
+          disabled={!selectable}
+          onClick={()=>selectable&&onSelect(room)}
+        >
+          <div className="checkin-room-icon"><Bed size={18}/></div>
+          <div className="checkin-room-copy"><b>الغرفة {room.number}</b><span>{room.type} · الدور {room.floor===0?"الأرضي":room.floor}</span>{room.guest?<small>النزيل الحالي: {room.guest}</small>:null}</div>
+          <div className={"checkin-room-status "+(selectable?"ok":"busy")}><i className={"status-dot "+room.status}/><span>{roomStateLabel[room.status]||room.status}</span></div>
+          <div className="checkin-room-cta">{selectable?"اختيار وتسكين":"غير متاحة"}</div>
+        </button>
+      })}
+      {filtered.length===0?<div className="rooms-state">لا توجد غرف مطابقة للبحث.</div>:null}
+    </div>
+  </ModalFrame>;
 }
 
 export function CheckinDialog({

@@ -11,7 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { fallbackRooms, mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
 import { getHotelBusinessDay } from "@/lib/business-day";
-import { CheckinDialog, ExtendStayDialog } from "@/components/StayDialogs";
+import { CheckinDialog, ExtendStayDialog, RoomCheckinPicker } from "@/components/StayDialogs";
 import RequestDialog from "@/components/RequestDialog";
 import RequestActions, { type ActiveRequest } from "@/components/RequestActions";
 import { notifyOperationsChanged, subscribeOperationsChanged } from "@/lib/operations-events";
@@ -35,6 +35,7 @@ export default function Dashboard() {
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
   const [checkinRoom, setCheckinRoom] = useState<Room | null>(null);
+  const [checkinPickerOpen,setCheckinPickerOpen]=useState(false);
   const [extendRoom, setExtendRoom] = useState<Room | null>(null);
   const [requestRoom, setRequestRoom] = useState<Room | null>(null);
   const [activeRequests, setActiveRequests] = useState<ActiveRequest[]>([]);
@@ -252,11 +253,7 @@ export default function Dashboard() {
             <div><span>يوم الفندق</span><b>{businessDay.label} · يبدأ 06:00</b></div>
           </div>
           <button className="icon-btn" onClick={() => setNotifOpen(v=>!v)}><Bell size={21}/>{liveNotifications.length > 0 && <i>{liveNotifications.length}</i>}</button>
-          <button className="primary-btn" onClick={()=>{
-            const firstAvailable=rooms.find(r=>r.status==="available");
-            if (firstAvailable) setCheckinRoom(firstAvailable);
-            else setActionError("لا توجد غرفة متاحة حاليًا");
-          }}><Plus size={18}/> تسجيل دخول نزيل</button>
+          <button className="primary-btn" onClick={()=>setCheckinPickerOpen(true)}><Plus size={18}/> تسجيل دخول نزيل</button>
         </div>
 
         <AnimatePresence>{notifOpen && <motion.div className="notif-pop" initial={{opacity:0,y:-8,scale:.98}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:-8,scale:.98}}>
@@ -404,12 +401,17 @@ export default function Dashboard() {
         </div>
 
         {selected.guest ? <>
-          <div className="guest-box"><span>النزيل الحالي</span><b>{selected.guest}</b><p>{maskedPhone(selected.guestPhone)}</p></div>
-          <div className="detail-grid">
-            <div><span>تاريخ الدخول</span><b>{formatStayDate(selected.checkinAt)}</b></div>
+          <div className="booking-detail-label"><CalendarCheck size={15}/><span>تفاصيل الحجز الحالي</span></div>
+          <div className="guest-box booking-guest-box"><span>اسم النزيل</span><b>{selected.guest}</b><p><Phone size={12}/> {selected.guestPhone||"رقم الجوال غير مسجل"}</p></div>
+          <div className="detail-grid booking-detail-grid">
+            <div><span>رقم الغرفة</span><b>{selected.number}</b></div>
+            <div><span>نوع الغرفة</span><b>{selected.type}</b></div>
+            <div><span>حالة الحجز</span><b>إقامة نشطة</b></div>
+            <div><span>حالة الغرفة</span><b>{labels[selected.status]}</b></div>
+            <div><span>تاريخ ووقت الدخول</span><b>{formatStayDate(selected.checkinAt)}</b></div>
             <div><span>الخروج المتوقع</span><b>{formatStayDate(selected.expectedCheckoutAt)}</b></div>
-            <div><span>مدة الإقامة</span><b>{selected.nights} ليالٍ</b></div>
-            <div><span>يوم الفندق</span><b>{businessDay.label}</b></div>
+            <div><span>مدة الإقامة</span><b>{selected.nights||1} {(selected.nights||1)===1?"ليلة":"ليالٍ"}</b></div>
+            <div><span>طلبات مفتوحة</span><b>{selected.openRequests||0}</b></div>
           </div>
           <button className="primary-btn full" onClick={()=>setRequestRoom(selected)}><Plus size={18}/> إضافة طلب للغرفة</button>
           <button className="secondary-btn full" onClick={()=>setExtendRoom(selected)}>تمديد الإقامة</button>
@@ -423,6 +425,12 @@ export default function Dashboard() {
 
     {actionError && <div className="action-toast" onClick={()=>setActionError("")}>{actionError}</div>}
 
+    <RoomCheckinPicker
+      open={checkinPickerOpen}
+      rooms={rooms}
+      onClose={()=>setCheckinPickerOpen(false)}
+      onSelect={room=>{setCheckinPickerOpen(false);setCheckinRoom(room);}}
+    />
     <CheckinDialog
       room={checkinRoom}
       onClose={()=>setCheckinRoom(null)}
