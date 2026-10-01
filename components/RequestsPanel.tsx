@@ -17,6 +17,7 @@ export default function RequestsPanel(){
   const [query,setQuery]=useState("");
   const [status,setStatus]=useState("all");
   const [scope,setScope]=useState<"active"|"completed"|"all">("active");
+  const [quickFilter,setQuickFilter]=useState<"active"|"approvals"|"late"|"completed"|null>("active");
   const [detailId,setDetailId]=useState<string|null>(null);
 
   async function load(silent=false){
@@ -50,27 +51,47 @@ export default function RequestsPanel(){
     completed:requests.filter(r=>["delivered","cancelled"].includes(r.status)).length
   }),[requests]);
 
+  function applyQuickFilter(filter:"active"|"approvals"|"late"|"completed"){
+    setQuickFilter(filter);
+    setQuery("");
+    if(filter==="active"){
+      setScope("active");
+      setStatus("all");
+    }else if(filter==="approvals"){
+      setScope("active");
+      setStatus("approval_required");
+    }else if(filter==="late"){
+      setScope("active");
+      setStatus("all");
+    }else{
+      setScope("completed");
+      setStatus("all");
+    }
+  }
+
   const filtered=useMemo(()=>requests.filter(item=>{
     const q=query.trim().toLowerCase();
     const scopeMatch=scope==="all"||(scope==="active"?activeStatuses.has(item.status):["delivered","cancelled"].includes(item.status));
+    const statusMatch=status==="all"||item.status===status;
+    const lateMatch=quickFilter!=="late"||(activeStatuses.has(item.status)&&ageMinutes(item.requested_at)>=15);
     const text=(item.room_number+" "+item.guest_name+" "+item.items).toLowerCase();
-    return scopeMatch&&(status==="all"||item.status===status)&&(!q||text.includes(q));
-  }),[requests,query,status,scope]);
+    return scopeMatch&&statusMatch&&lateMatch&&(!q||text.includes(q));
+  }),[requests,query,status,scope,quickFilter]);
 
   return <main className="settings-page requests-page">
     <header className="settings-header premium-page-head"><div><span className="section-kicker">SERVICE DESK</span><h1>مركز طلبات الغرف</h1><p>لوحة تشغيل لحظية من تسجيل الطلب حتى التسليم، مع SLA وموافقات الإدارة.</p></div><div className="live-badge"><i/> تحديث تلقائي كل 15 ثانية</div></header>
 
-    <section className="request-kpis premium-kpis">
-      <button className={scope==="active"?"active":""} onClick={()=>setScope("active")}><ListChecks size={20}/><span>قيد التنفيذ</span><b>{counts.active}</b><small>طلبات تحتاج متابعة</small></button>
-      <button onClick={()=>{setScope("active");setStatus("approval_required")}}><ShieldCheck size={20}/><span>موافقات</span><b>{counts.approvals}</b><small>بانتظار الإدارة</small></button>
-      <button onClick={()=>setScope("active")}><Clock size={20}/><span>متأخرة</span><b>{counts.late}</b><small>أكثر من 15 دقيقة</small></button>
-      <button className={scope==="completed"?"active":""} onClick={()=>setScope("completed")}><ListChecks size={20}/><span>السجل المكتمل</span><b>{counts.completed}</b><small>تسليم أو إلغاء</small></button>
+    <section className="request-kpis premium-kpis" aria-label="فلاتر الطلبات السريعة">
+      <button type="button" aria-pressed={quickFilter==="active"} className={quickFilter==="active"?"active":""} onClick={()=>applyQuickFilter("active")}><ListChecks size={20}/><span>قيد التنفيذ</span><b>{counts.active}</b><small>طلبات تحتاج متابعة</small></button>
+      <button type="button" aria-pressed={quickFilter==="approvals"} className={quickFilter==="approvals"?"active":""} onClick={()=>applyQuickFilter("approvals")}><ShieldCheck size={20}/><span>موافقات</span><b>{counts.approvals}</b><small>بانتظار الإدارة</small></button>
+      <button type="button" aria-pressed={quickFilter==="late"} className={quickFilter==="late"?"active":""} onClick={()=>applyQuickFilter("late")}><Clock size={20}/><span>متأخرة</span><b>{counts.late}</b><small>أكثر من 15 دقيقة</small></button>
+      <button type="button" aria-pressed={quickFilter==="completed"} className={quickFilter==="completed"?"active":""} onClick={()=>applyQuickFilter("completed")}><ListChecks size={20}/><span>السجل المكتمل</span><b>{counts.completed}</b><small>تسليم أو إلغاء</small></button>
     </section>
 
     <section className="panel requests-directory premium-directory">
       <div className="directory-toolbar pro-toolbar">
-        <div className="search wide"><MagnifyingGlass size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="بحث بالغرفة، النزيل أو الصنف…"/></div>
-        <div className="filter-select"><Funnel size={16}/><select value={scope} onChange={e=>setScope(e.target.value as typeof scope)}><option value="active">قيد التنفيذ</option><option value="completed">المكتملة والملغاة</option><option value="all">كل السجل</option></select><select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">كل الحالات</option>{Object.entries(statusLabels).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
+        <div className="search wide"><MagnifyingGlass size={18}/><input value={query} onChange={e=>{setQuery(e.target.value);setQuickFilter(null)}} placeholder="بحث بالغرفة، النزيل أو الصنف…"/></div>
+        <div className="filter-select"><Funnel size={16}/><select value={scope} onChange={e=>{setScope(e.target.value as typeof scope);setQuickFilter(null)}}><option value="active">قيد التنفيذ</option><option value="completed">المكتملة والملغاة</option><option value="all">كل السجل</option></select><select value={status} onChange={e=>{setStatus(e.target.value);setQuickFilter(null)}}><option value="all">كل الحالات</option>{Object.entries(statusLabels).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
       </div>
 
       {loading?<div className="rooms-state">جاري تحميل الطلبات…</div>:error?<div className="rooms-state error">{error}</div>:filtered.length===0?<div className="empty-pro-state"><ListChecks size={28}/><b>لا توجد طلبات مطابقة</b><span>جرّب تغيير الفلاتر أو البحث.</span></div>:
