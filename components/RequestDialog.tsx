@@ -45,7 +45,7 @@ export default function RequestDialog({room,onClose,onSuccess}:{room:Room|null;o
     const payloadLines=lines.filter(l=>l.itemId&&l.quantity>0);
     if(!payloadLines.length){setError("أضف صنفًا واحدًا على الأقل");return}
     setLoading(true);setError("");
-    const response=await fetch("/api/requests",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({stayId:room.stayId,lines:payloadLines,note:note.trim()||undefined})});
+    const response=await fetch("/api/requests",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({stayId:room!.stayId,lines:payloadLines,note:note.trim()||undefined})});
     const payload=await response.json().catch(()=>({}));
     if(!response.ok){
       const map:Record<string,string>={active_stay_not_found:"الإقامة لم تعد نشطة",request_item_not_found:"أحد الأصناف غير متاح",invalid_request_payload:"أضف صنفًا واحدًا على الأقل"};
