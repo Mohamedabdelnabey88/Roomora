@@ -433,6 +433,13 @@ export default {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error:"unauthorized" }, { status:401 });
 
+      // Keep the production catalog in sync for lightweight catalog additions.
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO request_items
+          (id,name,unit,max_per_request,max_per_business_day,max_per_stay,active)
+        VALUES ('extra-mattress','طراحة','قطعة',NULL,NULL,NULL,1)
+      `).run();
+
       const result = await env.DB.prepare(`
         SELECT id, name, unit, max_per_request, max_per_business_day, max_per_stay
         FROM request_items

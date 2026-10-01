@@ -24,21 +24,23 @@ export default function RequestDialog({room,onClose,onSuccess}:{room:Room|null;o
       .then(({ok,p})=>{
         if(!ok||!Array.isArray(p)){setError("تعذر تحميل قائمة المستهلكات");return}
         setItems(p);
-        if(p[0])setLines([{itemId:p[0].id,quantity:1}]);
+        setLines([{itemId:"",quantity:1}]);
       })
       .catch(()=>setError("تعذر تحميل قائمة المستهلكات"))
       .finally(()=>setLoadingItems(false));
   },[room?.stayId]);
 
-  const selectedIds=useMemo(()=>new Set(lines.map(l=>l.itemId)),[lines]);
+  const selectedIds=useMemo(()=>new Set(lines.map(l=>l.itemId).filter(Boolean)),[lines]);
+  const canAddMore=items.some(i=>!selectedIds.has(i.id));
   if(!room?.stayId)return null;
 
   function update(index:number,patch:Partial<Line>){setLines(prev=>prev.map((line,i)=>i===index?{...line,...patch}:line))}
   function addLine(){
-    const next=items.find(i=>!selectedIds.has(i.id))||items[0];
-    if(next)setLines(prev=>[...prev,{itemId:next.id,quantity:1}]);
+    if(canAddMore)setLines(prev=>[...prev,{itemId:"",quantity:1}]);
   }
-  function removeLine(index:number){setLines(prev=>prev.length<=1?prev:prev.filter((_,i)=>i!==index))}
+  function removeLine(index:number){
+    setLines(prev=>prev.length<=1?[{itemId:"",quantity:1}]:prev.filter((_,i)=>i!==index));
+  }
 
   async function submit(e:FormEvent){
     e.preventDefault();
@@ -72,21 +74,22 @@ export default function RequestDialog({room,onClose,onSuccess}:{room:Room|null;o
             return <div className="request-line-editor premium-line" key={index}>
               <div className="line-main">
                 <select aria-label={"الصنف "+(index+1)} value={line.itemId} onChange={e=>update(index,{itemId:e.target.value})}>
-                  {items.map(it=><option value={it.id} key={it.id}>{it.name}</option>)}
+                  <option value="">اختر الصنف</option>
+                  {items.map(it=><option value={it.id} key={it.id} disabled={it.id!==line.itemId&&selectedIds.has(it.id)}>{it.name}</option>)}
                 </select>
                 <div className="qty-stepper">
                   <button type="button" aria-label="تقليل الكمية" onClick={()=>update(index,{quantity:Math.max(1,line.quantity-1)})}><Minus size={14}/></button>
                   <b>{line.quantity}</b><span>{item?.unit||"قطعة"}</span>
                   <button type="button" aria-label="زيادة الكمية" onClick={()=>update(index,{quantity:line.quantity+1})}><Plus size={14}/></button>
                 </div>
-                <button className="remove-line" type="button" disabled={lines.length===1} onClick={()=>removeLine(index)}>حذف</button>
+                <button className="remove-line" type="button" onClick={()=>removeLine(index)}>{lines.length===1?"مسح":"حذف"}</button>
               </div>
               {item?<div className="line-limits"><span>للطلب <b>{item.max_per_request??"—"}</b></span><span>لليوم <b>{item.max_per_business_day??"—"}</b></span><span>للإقامة <b>{item.max_per_stay??"—"}</b></span></div>:null}
             </div>
           })}
         </div>}
 
-        <button className="secondary-btn add-item-btn" type="button" onClick={addLine} disabled={!items.length}><Plus size={16}/> إضافة صنف آخر</button>
+        <button className="secondary-btn add-item-btn" type="button" onClick={addLine} disabled={!items.length||!canAddMore}><Plus size={16}/> إضافة صنف آخر</button>
 
         <label className="premium-textarea"><span>ملاحظة للطلب <small>اختياري</small></span><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="مثال: التسليم بهدوء بدون طرق الباب"/></label>
         {error?<div className="login-error">{error}</div>:null}
