@@ -18,7 +18,10 @@ export default function RequestsPanel(){
   const [status,setStatus]=useState("all");
   const [scope,setScope]=useState<"active"|"completed"|"all">("active");
   const [quickFilter,setQuickFilter]=useState<"active"|"approvals"|"late"|"completed"|null>("active");
-  const [detailId,setDetailId]=useState<string|null>(null);\n  const [deletingId,setDeletingId]=useState<string|null>(null);\n  const [deleteConfirmId,setDeleteConfirmId]=useState<string|null>(null);\n  const [deleteError,setDeleteError]=useState("");
+  const [detailId,setDetailId]=useState<string|null>(null);
+  const [deletingId,setDeletingId]=useState<string|null>(null);
+  const [deleteConfirmId,setDeleteConfirmId]=useState<string|null>(null);
+  const [deleteError,setDeleteError]=useState("");
 
   async function load(silent=false){
     if(!silent)setLoading(true);
