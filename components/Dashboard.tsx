@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, Bed, Buildings, CalendarCheck, ChartBar, CheckCircle, Clock, DoorOpen,
   Gear, HouseLine, ListChecks, MagnifyingGlass, MoonStars, Package, Phone, Plus,
-  ShieldCheck, SignOut, Sparkle, Users, X
+  ShieldCheck, SignOut, Sparkle, Users, WarningCircle, X
 } from "@phosphor-icons/react";
 import { fallbackRooms, mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
 import { getHotelBusinessDay } from "@/lib/business-day";
@@ -24,6 +24,8 @@ const labels = {
   cleaning:"تنظيف",
   maintenance:"صيانة"
 } as const;
+
+type CheckoutAlert={key:string;title:string;body:string;tone:"warning"|"critical";overdue:boolean};
 
 export default function Dashboard() {
   const router=useRouter();
@@ -45,6 +47,7 @@ export default function Dashboard() {
   const [lastSync, setLastSync] = useState<Date|null>(null);
   const [clockNow,setClockNow]=useState(Date.now());
   const [audioReady,setAudioReady]=useState(false);
+  const [checkoutPopup,setCheckoutPopup]=useState<CheckoutAlert|null>(null);
   const roomsSnapshotRef = useRef("");
   const requestsSnapshotRef = useRef("");
   const checkoutSoundRef=useRef<Record<string,number>>({});
@@ -144,14 +147,13 @@ export default function Dashboard() {
       const gain=ctx.createGain();
       osc.type="sine";osc.frequency.value=freq;
       gain.gain.setValueAtTime(0.0001,now+index*.18);
-      gain.gain.exponentialRampToValueAtTime(.12,now+index*.18+.02);
+      gain.gain.exponentialRampToValueAtTime(.28,now+index*.18+.02);
       gain.gain.exponentialRampToValueAtTime(.0001,now+index*.18+.14);
       osc.connect(gain);gain.connect(ctx.destination);
-      osc.start(now+index*.18);osc.stop(now+index*.18+.16);
+      osc.start(now+index*.18);osc.stop(now+index*.18+.20);
     });
   }
 
-  type CheckoutAlert={key:string;title:string;body:string;tone:"warning"|"critical";overdue:boolean};
   const checkoutAlerts:CheckoutAlert[]=rooms.reduce<CheckoutAlert[]>((alerts,room)=>{
     if(!room.stayId||!room.expectedCheckoutAt)return alerts;
     const expected=new Date(room.expectedCheckoutAt).getTime();
@@ -168,14 +170,19 @@ export default function Dashboard() {
   },[]);
 
   useEffect(()=>{
-    if(!audioReady)return;
     const now=Date.now();
     const activeKeys=new Set(checkoutAlerts.map(a=>a.key));
     for(const key of Object.keys(checkoutSoundRef.current))if(!activeKeys.has(key))delete checkoutSoundRef.current[key];
+    if(checkoutPopup&&!activeKeys.has(checkoutPopup.key))setCheckoutPopup(null);
     for(const alert of checkoutAlerts){
       const last=checkoutSoundRef.current[alert.key]||0;
       const shouldPlay=alert.overdue?now-last>=5*60*1000:last===0;
-      if(shouldPlay){playCheckoutTone(alert.overdue);checkoutSoundRef.current[alert.key]=now}
+      if(shouldPlay){
+        if(audioReady)playCheckoutTone(alert.overdue);
+        checkoutSoundRef.current[alert.key]=now;
+        setCheckoutPopup(alert);
+        break;
+      }
     }
   },[audioReady,clockNow,rooms]);
 
@@ -331,7 +338,7 @@ export default function Dashboard() {
             <span className={`dot ${n.tone}`}/>
             <div><b>{n.title}</b><p>{n.body}</p></div>
           </div>)}
-          <Link href="/requests" className="text-btn">عرض مركز الإشعارات</Link>
+          <Link href="/notifications" className="text-btn">عرض مركز الإشعارات</Link>
         </motion.div>}</AnimatePresence>
       </header>
 
@@ -492,6 +499,19 @@ export default function Dashboard() {
     </>}</AnimatePresence>
 
     {actionError && <div className="action-toast" onClick={()=>setActionError("")}>{actionError}</div>}
+    <AnimatePresence>{checkoutPopup?<motion.div
+      className={"checkout-alert-popup "+checkoutPopup.tone}
+      initial={{opacity:0,y:18,scale:.96}}
+      animate={{opacity:1,y:0,scale:1}}
+      exit={{opacity:0,y:12,scale:.97}}
+      transition={{duration:.2}}
+    >
+      <button className="checkout-alert-close" aria-label="إغلاق التنبيه" onClick={()=>setCheckoutPopup(null)}><X size={17}/></button>
+      <div className="checkout-alert-icon"><WarningCircle size={24} weight="fill"/></div>
+      <div className="checkout-alert-copy"><span>{checkoutPopup.overdue?"تنبيه خروج متأخر":"تنبيه موعد خروج"}</span><b>{checkoutPopup.title}</b><p>{checkoutPopup.body}</p></div>
+      <Link href="/notifications" className="checkout-alert-link" onClick={()=>setCheckoutPopup(null)}>فتح مركز الإشعارات</Link>
+    </motion.div>:null}</AnimatePresence>
+
 
     <RoomCheckinPicker
       open={checkinPickerOpen}

@@ -4,7 +4,7 @@ import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Bed,ChartBar,Gear,HouseLine,ListChecks,MoonStars,Package,
+  Bed,Bell,ChartBar,Gear,HouseLine,ListChecks,MoonStars,Package,
   ShieldCheck,SignOut,Sparkle,Users
 } from "@phosphor-icons/react";
 
@@ -14,6 +14,7 @@ const items=[
   {href:"/",label:"لوحة التشغيل",icon:HouseLine},
   {href:"/rooms",label:"الغرف والإقامات",icon:Bed},
   {href:"/requests",label:"طلبات الغرف",icon:ListChecks},
+  {href:"/notifications",label:"مركز الإشعارات",icon:Bell},
   {href:"/guests",label:"النزلاء",icon:Users},
   {href:"/consumables",label:"المستهلكات",icon:Package},
   {href:"/reports",label:"التقارير",icon:ChartBar},
