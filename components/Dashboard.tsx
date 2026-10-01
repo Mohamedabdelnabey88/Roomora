@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, Bed, Buildings, CalendarCheck, ChartBar, CheckCircle, Clock, DoorOpen,
-  Gear, HouseLine, ListChecks, MagnifyingGlass, MoonStars, Package, Plus,
+  Gear, HouseLine, ListChecks, MagnifyingGlass, MoonStars, Package, Phone, Plus,
   ShieldCheck, SignOut, Sparkle, Users, X
 } from "@phosphor-icons/react";
 import { fallbackRooms, mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
