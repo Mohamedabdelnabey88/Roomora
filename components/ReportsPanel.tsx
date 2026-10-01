@@ -1,7 +1,7 @@
 "use client";
-import { useEffect,useState } from "react";
-import Link from "next/link";
-import { ArrowRight,ChartBar,DoorOpen,ListChecks,Package,Users,FilePdf } from "@phosphor-icons/react";
+
+import { useEffect,useMemo,useState } from "react";
+import { ChartBar,DoorOpen,FilePdf,ListChecks,Package,Users } from "@phosphor-icons/react";
 
 type Summary={
   businessDay:string;
@@ -14,33 +14,60 @@ type Summary={
 export default function ReportsPanel(){
   const [data,setData]=useState<Summary|null>(null);
   const [error,setError]=useState("");
-  useEffect(()=>{(async()=>{
+  const [generatedAt,setGeneratedAt]=useState<Date|null>(null);
+
+  async function load(){
+    setError("");
     const r=await fetch("/api/reports/summary",{cache:"no-store"});
-    if(r.status===401){window.location.href="/login";return;}
+    if(r.status===401){window.location.href="/login";return}
     const p=await r.json().catch(()=>null);
-    if(!r.ok||!p){setError("تعذر تحميل التقارير");return;}
-    setData(p);
-  })();},[]);
+    if(!r.ok||!p){setError("تعذر تحميل التقارير");return}
+    setData(p);setGeneratedAt(new Date());
+  }
+  useEffect(()=>{void load()},[]);
+
+  const occupancy=useMemo(()=>!data||!data.roomStats.total_rooms?0:Math.round((data.stayStats.in_house/data.roomStats.total_rooms)*100),[data]);
+
+  function downloadCsv(){
+    if(!data)return;
+    const rows=[
+      ["Roomora - تقرير التشغيل"],["يوم الفندق",data.businessDay],
+      ["إجمالي الغرف",data.roomStats.total_rooms],["الغرف المشغولة",data.stayStats.in_house],["الغرف المتاحة",data.roomStats.available_rooms],
+      ["دخول اليوم",data.stayStats.checkins_today],["خروج اليوم",data.stayStats.checkouts_today],
+      ["طلبات اليوم",data.requestStats.requests_today],["طلبات نشطة",data.requestStats.active_requests],["بانتظار موافقة",data.requestStats.awaiting_approval],
+      ["متوسط التسليم بالدقائق",data.requestStats.avg_delivery_minutes==null?"":Math.round(data.requestStats.avg_delivery_minutes)],
+      [],["الصنف","الكمية"],...data.topItems.map(x=>[x.name,x.quantity])
+    ];
+    const csv="\uFEFF"+rows.map(row=>row.map(v=>"\""+String(v??"").replaceAll("\"","\"\"")+"\"").join(",")).join("\n");
+    const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+    const a=document.createElement("a");a.href=url;a.download="roomora-report-"+data.businessDay+".csv";a.click();URL.revokeObjectURL(url);
+  }
 
   return <main className="settings-page report-print-page">
-    <header className="settings-header"><div><Link href="/" className="back-link"><ArrowRight size={16}/> العودة للوحة التشغيل</Link><span className="section-kicker">OPERATIONS REPORTS</span><h1>التقارير التشغيلية</h1><p>مؤشرات الإشغال والإقامات وطلبات الغرف من البيانات الفعلية.</p></div><button className="primary-btn print-report-btn" onClick={()=>window.print()}><FilePdf size={18}/> حفظ التقرير PDF</button></header>
-    {error?<div className="rooms-state error">{error}</div>:!data?<div className="rooms-state">جاري تحميل التقرير…</div>:<>
-      <section className="request-kpis">
-        <div><DoorOpen size={19}/><span>الغرف المشغولة</span><b>{data.roomStats.occupied_rooms||0}</b></div>
-        <div><Users size={19}/><span>النزلاء الحاليون</span><b>{data.stayStats.in_house||0}</b></div>
-        <div><ListChecks size={19}/><span>طلبات اليوم</span><b>{data.requestStats.requests_today||0}</b></div>
+    <header className="settings-header premium-page-head report-page-head"><div><span className="section-kicker">OPERATIONS INTELLIGENCE</span><h1>التقرير التشغيلي</h1><p>ملخص يوم الفندق من بيانات الإقامات وطلبات الخدمة الفعلية.</p></div><div className="report-actions"><button className="secondary-btn" onClick={downloadCsv}>تنزيل Excel / CSV</button><button className="primary-btn print-report-btn" onClick={()=>window.print()}><FilePdf size={18}/> حفظ PDF / طباعة</button></div></header>
+
+    {error?<div className="rooms-state error">{error}</div>:!data?<div className="rooms-state">جاري تجهيز التقرير…</div>:<>
+      <section className="report-document-head"><div><b>Roomora</b><span>Hotel Operations Report</span></div><div><span>يوم الفندق</span><b>{data.businessDay}</b><small>{generatedAt?"تم الإنشاء "+generatedAt.toLocaleString("ar-SA",{timeZone:"Asia/Riyadh"}):""}</small></div></section>
+
+      <section className="report-hero-grid">
+        <article><DoorOpen size={22}/><div><span>الإشغال الحالي</span><b>{data.stayStats.in_house} <small>/ {data.roomStats.total_rooms}</small></b><em>{occupancy}%</em></div></article>
+        <article><Users size={22}/><div><span>دخول اليوم</span><b>{data.stayStats.checkins_today}</b><small>نزيل / إقامة</small></div></article>
+        <article><Users size={22}/><div><span>خروج اليوم</span><b>{data.stayStats.checkouts_today}</b><small>خروج مكتمل</small></div></article>
+        <article><ListChecks size={22}/><div><span>طلبات اليوم</span><b>{data.requestStats.requests_today}</b><small>{data.requestStats.active_requests} نشط الآن</small></div></article>
       </section>
-      <div className="settings-grid">
-        <section className="panel settings-card"><div className="settings-title"><div className="settings-icon"><ChartBar size={20}/></div><div><h2>ملخص التشغيل</h2><p>يوم الفندق {data.businessDay}</p></div></div>
-          <div className="report-metrics"><div><span>إجمالي الغرف</span><b>{data.roomStats.total_rooms||0}</b></div><div><span>المتاحة</span><b>{data.roomStats.available_rooms||0}</b></div><div><span>دخول اليوم</span><b>{data.stayStats.checkins_today||0}</b></div><div><span>خروج اليوم</span><b>{data.stayStats.checkouts_today||0}</b></div></div>
-        </section>
-        <section className="panel settings-card"><div className="settings-title"><div className="settings-icon"><ListChecks size={20}/></div><div><h2>أداء الطلبات</h2><p>المسار التشغيلي للخدمة</p></div></div>
-          <div className="report-metrics"><div><span>نشطة</span><b>{data.requestStats.active_requests||0}</b></div><div><span>بانتظار موافقة</span><b>{data.requestStats.awaiting_approval||0}</b></div><div><span>إجمالي الطلبات</span><b>{data.requestStats.total_requests||0}</b></div><div><span>متوسط التسليم</span><b>{data.requestStats.avg_delivery_minutes==null?"—":Math.round(data.requestStats.avg_delivery_minutes)+" د"}</b></div></div>
-        </section>
+
+      <section className="panel report-section occupancy-section">
+        <div className="report-section-title"><div><ChartBar size={20}/><div><h2>الإشغال والغرف</h2><p>صورة تشغيلية للحالة الحالية.</p></div></div><strong>{occupancy}% إشغال</strong></div>
+        <div className="occupancy-bar"><span style={{width:occupancy+"%"}}/></div>
+        <div className="report-metrics pro-report-metrics"><div><span>إجمالي الغرف</span><b>{data.roomStats.total_rooms}</b></div><div><span>متاحة</span><b>{data.roomStats.available_rooms}</b></div><div><span>داخل الفندق</span><b>{data.stayStats.in_house}</b></div><div><span>إجمالي المغادرات</span><b>{data.stayStats.checked_out_total}</b></div></div>
+      </section>
+
+      <div className="report-two-col">
+        <section className="panel report-section"><div className="report-section-title"><div><ListChecks size={20}/><div><h2>أداء الخدمة</h2><p>حركة طلبات الغرف.</p></div></div></div><div className="report-metrics pro-report-metrics"><div><span>طلبات نشطة</span><b>{data.requestStats.active_requests}</b></div><div><span>بانتظار موافقة</span><b>{data.requestStats.awaiting_approval}</b></div><div><span>إجمالي الطلبات</span><b>{data.requestStats.total_requests}</b></div><div><span>متوسط التسليم</span><b>{data.requestStats.avg_delivery_minutes==null?"—":Math.round(data.requestStats.avg_delivery_minutes)+" د"}</b></div></div></section>
+        <section className="panel report-section"><div className="report-section-title"><div><Package size={20}/><div><h2>الأصناف الأعلى طلبًا</h2><p>الكميات غير الملغاة.</p></div></div></div><div className="top-items pro-top-items">{data.topItems.length?data.topItems.map((x,i)=><div key={x.name}><span>{i+1}</span><b>{x.name}</b><em>{x.quantity}</em></div>):<p className="detail-empty">لا توجد طلبات أصناف بعد.</p>}</div></section>
       </div>
-      <section className="panel limits-card"><div className="settings-title"><div className="settings-icon"><Package size={20}/></div><div><h2>أكثر المستهلكات طلبًا</h2><p>حسب الكميات الفعلية غير الملغاة.</p></div></div>
-        <div className="top-items">{data.topItems.map((x,i)=><div key={x.name}><span>{i+1}</span><b>{x.name}</b><em>{x.quantity}</em></div>)}</div>
-      </section>
+
+      <footer className="report-foot">تم إنشاء هذا التقرير من بيانات Roomora التشغيلية · التوقيت Asia/Riyadh</footer>
     </>}
   </main>;
 }

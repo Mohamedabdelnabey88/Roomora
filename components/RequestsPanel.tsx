@@ -1,127 +1,90 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowRight, Clock, Funnel, ListChecks, MagnifyingGlass, ShieldCheck } from "@phosphor-icons/react";
-import RequestActions, { type ActiveRequest } from "@/components/RequestActions";
+import { useEffect,useMemo,useState } from "react";
+import { Clock,Funnel,ListChecks,MagnifyingGlass,ShieldCheck } from "@phosphor-icons/react";
+import RequestActions,{type ActiveRequest} from "@/components/RequestActions";
 import RequestDetailDialog from "@/components/RequestDetailDialog";
+import { subscribeOperationsChanged } from "@/lib/operations-events";
 
-const statusLabels:Record<string,string>={
-  new:"جديد",
-  acknowledged:"تم الاستلام",
-  preparing:"جاري التجهيز",
-  approval_required:"بانتظار موافقة",
-  delivered:"تم التسليم",
-  cancelled:"ملغي"
-};
+const statusLabels:Record<string,string>={new:"جديد",acknowledged:"تم الاستلام",preparing:"جاري التجهيز",approval_required:"بانتظار موافقة",delivered:"تم التسليم",cancelled:"ملغي"};
+const activeStatuses=new Set(["new","acknowledged","preparing","approval_required"]);
 
-export default function RequestsPanel() {
+export default function RequestsPanel(){
   const [requests,setRequests]=useState<ActiveRequest[]>([]);
   const [role,setRole]=useState<"admin"|"reception"|null>(null);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [query,setQuery]=useState("");
   const [status,setStatus]=useState("all");
-  const [scope,setScope]=useState("active");
+  const [scope,setScope]=useState<"active"|"completed"|"all">("active");
   const [detailId,setDetailId]=useState<string|null>(null);
 
-  async function load() {
-    setLoading(true);
-    const [requestResponse,userResponse]=await Promise.all([
-      fetch("/api/requests?scope=all",{cache:"no-store"}),
-      fetch("/api/auth/me",{cache:"no-store"})
-    ]);
-    if (requestResponse.status===401 || userResponse.status===401) { window.location.href="/login"; return; }
-
-    const requestPayload=await requestResponse.json().catch(()=>[]);
-    const userPayload=await userResponse.json().catch(()=>null);
-
-    if (!requestResponse.ok || !Array.isArray(requestPayload)) {
-      setError("تعذر تحميل طلبات الغرف");
-      setLoading(false);
-      return;
-    }
-
-    setRequests(requestPayload);
-    setRole(userPayload?.user?.role || null);
-    setError("");
-    setLoading(false);
+  async function load(silent=false){
+    if(!silent)setLoading(true);
+    try{
+      const [rr,ur]=await Promise.all([fetch("/api/requests?scope=all",{cache:"no-store"}),fetch("/api/auth/me",{cache:"no-store"})]);
+      if(rr.status===401||ur.status===401){window.location.href="/login";return}
+      const [rp,up]=await Promise.all([rr.json().catch(()=>[]),ur.json().catch(()=>null)]);
+      if(!rr.ok||!Array.isArray(rp))throw new Error("تعذر تحميل طلبات الغرف");
+      setRequests(rp);setRole(up?.user?.role||null);setError("");
+    }catch(e){setError(e instanceof Error?e.message:"تعذر تحميل طلبات الغرف")}
+    finally{if(!silent)setLoading(false)}
   }
 
   useEffect(()=>{
     void load();
-    const timer=window.setInterval(()=>void load(),30000);
-    return()=>window.clearInterval(timer);
+    const refresh=()=>void load(true);
+    const timer=window.setInterval(refresh,15000);
+    const unsubscribe=subscribeOperationsChanged(refresh);
+    window.addEventListener("focus",refresh);
+    return()=>{window.clearInterval(timer);window.removeEventListener("focus",refresh);unsubscribe()}
   },[]);
 
-  function ageMinutes(value:string) {
-    const ms=new Date(value).getTime();
-    if (!Number.isFinite(ms)) return 0;
-    return Math.max(0,Math.floor((Date.now()-ms)/60000));
-  }
+  const ageMinutes=(value:string)=>Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/60000));
+  const age=(value:string)=>{const m=ageMinutes(value);return m<1?"الآن":m<60?"منذ "+m+" د":"منذ "+Math.floor(m/60)+" س"};
 
-  function age(value:string) {
-    const mins=ageMinutes(value);
-    if (mins<1) return "الآن";
-    if (mins<60) return "منذ "+mins+" د";
-    return "منذ "+Math.floor(mins/60)+" س";
-  }
+  const counts=useMemo(()=>({
+    active:requests.filter(r=>activeStatuses.has(r.status)).length,
+    approvals:requests.filter(r=>r.status==="approval_required").length,
+    late:requests.filter(r=>activeStatuses.has(r.status)&&ageMinutes(r.requested_at)>=15).length,
+    completed:requests.filter(r=>["delivered","cancelled"].includes(r.status)).length
+  }),[requests]);
 
   const filtered=useMemo(()=>requests.filter(item=>{
-    const q=query.trim();
+    const q=query.trim().toLowerCase();
+    const scopeMatch=scope==="all"||(scope==="active"?activeStatuses.has(item.status):["delivered","cancelled"].includes(item.status));
     const text=(item.room_number+" "+item.guest_name+" "+item.items).toLowerCase();
-    const effectiveScope = q ? "all" : scope;
-    const scopeMatch = effectiveScope==="all" || (effectiveScope==="active" ? !["delivered","cancelled"].includes(item.status) : ["delivered","cancelled"].includes(item.status));
-    return scopeMatch && (status==="all" || item.status===status) && (!q || text.includes(q.toLowerCase()));
+    return scopeMatch&&(status==="all"||item.status===status)&&(!q||text.includes(q));
   }),[requests,query,status,scope]);
 
   return <main className="settings-page requests-page">
-    <header className="settings-header">
-      <div>
-        <Link href="/" className="back-link"><ArrowRight size={16}/> العودة للوحة التشغيل</Link>
-        <span className="section-kicker">SERVICE DESK</span>
-        <h1>طلبات الغرف</h1>
-        <p>متابعة الطلب من لحظة التسجيل وحتى التسليم أو قرار الإدارة.</p>
-      </div>
-    </header>
+    <header className="settings-header premium-page-head"><div><span className="section-kicker">SERVICE DESK</span><h1>مركز طلبات الغرف</h1><p>لوحة تشغيل لحظية من تسجيل الطلب حتى التسليم، مع SLA وموافقات الإدارة.</p></div><div className="live-badge"><i/> تحديث تلقائي كل 15 ثانية</div></header>
 
-    <section className="request-kpis">
-      <div><ListChecks size={19}/><span>النشطة</span><b>{requests.filter(r=>!["delivered","cancelled"].includes(r.status)).length}</b></div>
-      <div><ShieldCheck size={19}/><span>تحتاج موافقة</span><b>{requests.filter(r=>r.status==="approval_required").length}</b></div>
-      <div><Clock size={19}/><span>متأخرة +15 د</span><b>{requests.filter(r=>!["delivered","cancelled"].includes(r.status)&&ageMinutes(r.requested_at)>=15).length}</b></div>
+    <section className="request-kpis premium-kpis">
+      <button className={scope==="active"?"active":""} onClick={()=>setScope("active")}><ListChecks size={20}/><span>قيد التنفيذ</span><b>{counts.active}</b><small>طلبات تحتاج متابعة</small></button>
+      <button onClick={()=>{setScope("active");setStatus("approval_required")}}><ShieldCheck size={20}/><span>موافقات</span><b>{counts.approvals}</b><small>بانتظار الإدارة</small></button>
+      <button onClick={()=>setScope("active")}><Clock size={20}/><span>متأخرة</span><b>{counts.late}</b><small>أكثر من 15 دقيقة</small></button>
+      <button className={scope==="completed"?"active":""} onClick={()=>setScope("completed")}><ListChecks size={20}/><span>السجل المكتمل</span><b>{counts.completed}</b><small>تسليم أو إلغاء</small></button>
     </section>
 
-    <section className="panel requests-directory">
-      <div className="directory-toolbar">
-        <div className="search wide"><MagnifyingGlass size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="ابحث بالغرفة أو النزيل أو الصنف"/></div>
-        <div className="filter-select"><Funnel size={16}/><select value={scope} onChange={e=>setScope(e.target.value)}>
-          <option value="active">الطلبات النشطة</option><option value="completed">المكتملة والملغاة</option><option value="all">كل السجل</option>
-        </select><select value={status} onChange={e=>setStatus(e.target.value)}>
-          <option value="all">كل الحالات</option>
-          <option value="new">جديد</option>
-          <option value="acknowledged">تم الاستلام</option>
-          <option value="preparing">جاري التجهيز</option>
-          <option value="approval_required">بانتظار موافقة</option>
-          <option value="delivered">تم التسليم</option>
-          <option value="cancelled">ملغي</option>
-        </select></div>
+    <section className="panel requests-directory premium-directory">
+      <div className="directory-toolbar pro-toolbar">
+        <div className="search wide"><MagnifyingGlass size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="بحث بالغرفة، النزيل أو الصنف…"/></div>
+        <div className="filter-select"><Funnel size={16}/><select value={scope} onChange={e=>setScope(e.target.value as typeof scope)}><option value="active">قيد التنفيذ</option><option value="completed">المكتملة والملغاة</option><option value="all">كل السجل</option></select><select value={status} onChange={e=>setStatus(e.target.value)}><option value="all">كل الحالات</option>{Object.entries(statusLabels).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
       </div>
-      {query.trim() && <div className="search-scope-note">البحث الحالي يشمل كل سجل الطلبات، بما فيه الطلبات المسلّمة والملغاة.</div>}
 
-      {loading ? <div className="rooms-state">جاري تحميل الطلبات…</div> :
-      error ? <div className="rooms-state error">{error}</div> :
-      filtered.length===0 ? <div className="rooms-state">لا توجد طلبات مطابقة.</div> :
-      <div className="request-board">{filtered.map(item=>{
+      {loading?<div className="rooms-state">جاري تحميل الطلبات…</div>:error?<div className="rooms-state error">{error}</div>:filtered.length===0?<div className="empty-pro-state"><ListChecks size={28}/><b>لا توجد طلبات مطابقة</b><span>جرّب تغيير الفلاتر أو البحث.</span></div>:
+      <div className="request-board premium-request-board">{filtered.map(item=>{
         const mins=ageMinutes(item.requested_at);
         const sla=mins>=25?"critical":mins>=15?"warning":"normal";
-        return <article className={"request-card "+sla} key={item.id}>
-          <div className="request-card-head"><div><b>غرفة {item.room_number}</b><span>{item.guest_name}</span></div><i>{age(item.requested_at)}</i></div>
-          <p>{item.items || "طلب غرفة"}</p>
-          <div className="request-card-meta"><span className={"table-status "+item.status}>{statusLabels[item.status] || item.status}</span><small>{mins>=25?"حرج":mins>=15?"تحذير":"ضمن SLA"}</small></div>
-          {item.approval_reason && <div className="approval-reason">{item.approval_reason}</div>}
-          <button className="detail-button" onClick={()=>setDetailId(item.id)}>عرض التفاصيل</button>
-          <RequestActions request={item} role={role} onChanged={load}/>
-        </article>;
+        return <article className={"request-card premium-request-card "+sla} key={item.id}>
+          <header><div className="request-room"><span>غرفة</span><b>{item.room_number}</b></div><div className="request-age"><Clock size={14}/>{age(item.requested_at)}</div></header>
+          <div className="request-person"><span>النزيل</span><b>{item.guest_name}</b></div>
+          <div className="request-items-copy">{item.items||"طلب غرفة"}</div>
+          <div className="request-state-row"><span className={"table-status "+item.status}>{statusLabels[item.status]||item.status}</span><small className={"sla-chip "+sla}>{sla==="critical"?"حرج":sla==="warning"?"تنبيه":"ضمن SLA"}</small></div>
+          {item.approval_reason?<div className="approval-reason"><ShieldCheck size={14}/>{item.approval_reason}</div>:null}
+          <div className="request-card-footer"><button className="detail-button" onClick={()=>setDetailId(item.id)}>التفاصيل الكاملة</button><RequestActions request={item} role={role} onChanged={()=>load(true)}/></div>
+        </article>
       })}</div>}
     </section>
     <RequestDetailDialog requestId={detailId} onClose={()=>setDetailId(null)}/>
