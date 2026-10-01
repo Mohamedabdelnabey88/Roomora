@@ -43,8 +43,12 @@ export default function Dashboard() {
   const [actionError, setActionError] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all"|Room["status"]>("all");
   const [lastSync, setLastSync] = useState<Date|null>(null);
+  const [clockNow,setClockNow]=useState(Date.now());
+  const [audioReady,setAudioReady]=useState(false);
   const roomsSnapshotRef = useRef("");
   const requestsSnapshotRef = useRef("");
+  const checkoutSoundRef=useRef<Record<string,number>>({});
+  const audioContextRef=useRef<AudioContext|null>(null);
 
   async function loadRooms(silent=false) {
     if(!silent) setLoadingRooms(true);
@@ -116,6 +120,60 @@ export default function Dashboard() {
     };
   }, []);
 
+  useEffect(()=>{
+    const tick=()=>setClockNow(Date.now());
+    const timer=window.setInterval(tick,60000);
+    const unlock=()=>{
+      try{
+        if(!audioContextRef.current)audioContextRef.current=new AudioContext();
+        if(audioContextRef.current.state==="suspended")void audioContextRef.current.resume();
+        setAudioReady(true);
+      }catch{}
+    };
+    window.addEventListener("pointerdown",unlock,{once:true});
+    return()=>{window.clearInterval(timer);window.removeEventListener("pointerdown",unlock)};
+  },[]);
+
+  function playCheckoutTone(critical=false){
+    const ctx=audioContextRef.current;
+    if(!ctx||ctx.state!=="running")return;
+    const now=ctx.currentTime;
+    const tones=critical?[880,660,880]:[660,880];
+    tones.forEach((freq,index)=>{
+      const osc=ctx.createOscillator();
+      const gain=ctx.createGain();
+      osc.type="sine";osc.frequency.value=freq;
+      gain.gain.setValueAtTime(0.0001,now+index*.18);
+      gain.gain.exponentialRampToValueAtTime(.12,now+index*.18+.02);
+      gain.gain.exponentialRampToValueAtTime(.0001,now+index*.18+.14);
+      osc.connect(gain);gain.connect(ctx.destination);
+      osc.start(now+index*.18);osc.stop(now+index*.18+.16);
+    });
+  }
+
+  const checkoutAlerts=rooms.flatMap(room=>{
+    if(!room.stayId||!room.expectedCheckoutAt)return [];
+    const expected=new Date(room.expectedCheckoutAt).getTime();
+    if(!Number.isFinite(expected))return [];
+    const diffMinutes=Math.ceil((expected-clockNow)/60000);
+    if(diffMinutes>15)return [];
+    if(diffMinutes>0)return [{key:"pre-"+room.stayId,title:"موعد خروج قريب",body:"الغرفة "+room.number+" · "+(room.guest||"نزيل")+" · متبقي "+diffMinutes+" دقيقة",tone:"warning" as const,overdue:false}];
+    const late=Math.max(0,Math.floor((clockNow-expected)/60000));
+    return [{key:"late-"+room.stayId,title:"تجاوز وقت الخروج",body:"الغرفة "+room.number+" · "+(room.guest||"نزيل")+" · تأخير "+late+" دقيقة — سجّل خروج أو مدد الإقامة",tone:"critical" as const,overdue:true}];
+  });
+
+  useEffect(()=>{
+    if(!audioReady)return;
+    const now=Date.now();
+    const activeKeys=new Set(checkoutAlerts.map(a=>a.key));
+    for(const key of Object.keys(checkoutSoundRef.current))if(!activeKeys.has(key))delete checkoutSoundRef.current[key];
+    for(const alert of checkoutAlerts){
+      const last=checkoutSoundRef.current[alert.key]||0;
+      const shouldPlay=alert.overdue?now-last>=5*60*1000:last===0;
+      if(shouldPlay){playCheckoutTone(alert.overdue);checkoutSoundRef.current[alert.key]=now}
+    }
+  },[audioReady,clockNow,rooms]);
+
   function requestAgeMinutes(value:string) {
     return Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/60000));
   }
@@ -127,7 +185,7 @@ export default function Dashboard() {
     return "منذ "+Math.floor(mins/60)+" س";
   }
 
-  const liveNotifications = activeRequests
+  const requestNotifications = activeRequests
     .map(r=>{
       const mins=requestAgeMinutes(r.requested_at);
       if (r.status==="approval_required") {
@@ -142,6 +200,11 @@ export default function Dashboard() {
       return null;
     })
     .filter(Boolean) as Array<{title:string;body:string;tone:"critical"|"warning"|"info"}>;
+
+  const liveNotifications=[
+    ...checkoutAlerts.map(({title,body,tone})=>({title,body,tone})),
+    ...requestNotifications
+  ];
 
   const requestStatusLabel:Record<string,string>={
     new:"جديد",

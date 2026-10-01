@@ -434,11 +434,14 @@ export default {
       if (!actor) return json({ error:"unauthorized" }, { status:401 });
 
       // Keep the production catalog in sync for lightweight catalog additions.
-      await env.DB.prepare(`
-        INSERT OR IGNORE INTO request_items
-          (id,name,unit,max_per_request,max_per_business_day,max_per_stay,active)
-        VALUES ('extra-mattress','طراحة','قطعة',NULL,NULL,NULL,1)
-      `).run();
+      await env.DB.batch([
+        env.DB.prepare(`INSERT OR IGNORE INTO request_items (id,name,unit,max_per_request,max_per_business_day,max_per_stay,active) VALUES ('extra-mattress','طراحة','قطعة',1,1,1,1)`),
+        env.DB.prepare(`INSERT OR IGNORE INTO request_items (id,name,unit,max_per_request,max_per_business_day,max_per_stay,active) VALUES ('fine-tissues','فاين / مناديل','علبة',2,4,10,1)`),
+        env.DB.prepare(`INSERT OR IGNORE INTO request_items (id,name,unit,max_per_request,max_per_business_day,max_per_stay,active) VALUES ('towel-small','منشفة صغيرة','قطعة',4,6,12,1)`),
+        env.DB.prepare(`INSERT OR IGNORE INTO request_items (id,name,unit,max_per_request,max_per_business_day,max_per_stay,active) VALUES ('towel-large','منشفة كبيرة','قطعة',2,4,8,1)`),
+        env.DB.prepare(`INSERT OR IGNORE INTO request_items (id,name,unit,max_per_request,max_per_business_day,max_per_stay,active) VALUES ('slippers','سليبر','زوج',2,2,4,1)`),
+        env.DB.prepare(`UPDATE request_items SET active=0 WHERE id='towel'`)
+      ]);
 
       const result = await env.DB.prepare(`
         SELECT id, name, unit, max_per_request, max_per_business_day, max_per_stay
@@ -813,16 +816,36 @@ export default {
 
       const body = await readJson<{
         stayId?:string;
-        lines?:Array<{ itemId?:string; quantity?:number }>;
+        lines?:Array<{ itemId?:string; quantity?:number; customLabel?:string }>;
         note?:string;
       }>(request);
 
       const stayId = body?.stayId?.trim();
       const merged = new Map<string, number>();
       for (const raw of body?.lines || []) {
-        const itemId = raw.itemId?.trim() || "";
+        let itemId = raw.itemId?.trim() || "";
         const quantity = Number(raw.quantity || 0);
         if (!itemId || !Number.isInteger(quantity) || quantity <= 0) continue;
+
+        if (itemId === "__custom__") {
+          const label = raw.customLabel?.trim().replace(/\s+/g," ") || "";
+          if (label.length < 2 || label.length > 80) return json({ error:"invalid_custom_item" }, { status:400 });
+          const existing = await env.DB.prepare(`
+            SELECT id FROM request_items WHERE lower(name)=lower(?1) LIMIT 1
+          `).bind(label).first<{id:string}>();
+          if (existing?.id) {
+            itemId = existing.id;
+          } else {
+            const customId = "custom-" + (await sha256Hex(label.toLowerCase())).slice(0,16);
+            await env.DB.prepare(`
+              INSERT OR IGNORE INTO request_items
+                (id,name,unit,max_per_request,max_per_business_day,max_per_stay,active)
+              VALUES (?1,?2,'قطعة',NULL,NULL,NULL,0)
+            `).bind(customId,label).run();
+            itemId = customId;
+          }
+        }
+
         merged.set(itemId, (merged.get(itemId) || 0) + quantity);
       }
       const lines = Array.from(merged, ([itemId, quantity]) => ({ itemId, quantity }));
@@ -847,7 +870,7 @@ export default {
         const item = await env.DB.prepare(`
           SELECT id, name, max_per_request, max_per_business_day, max_per_stay
           FROM request_items
-          WHERE id = ?1 AND active = 1
+          WHERE id = ?1 AND (active = 1 OR id LIKE 'custom-%')
           LIMIT 1
         `).bind(line.itemId).first<{
           id:string; name:string;

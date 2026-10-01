@@ -6,7 +6,7 @@ import type { Room } from "@/lib/data";
 import ModalFrame from "@/components/ui/ModalFrame";
 
 type RequestItem={id:string;name:string;unit:string;max_per_request:number|null;max_per_business_day:number|null;max_per_stay:number|null};
-type Line={itemId:string;quantity:number};
+type Line={itemId:string;quantity:number;customLabel?:string};
 
 export default function RequestDialog({room,onClose,onSuccess}:{room:Room|null;onClose:()=>void;onSuccess:(result:{requiresApproval:boolean;violations:string[]})=>Promise<void>|void}){
   const [items,setItems]=useState<RequestItem[]>([]);
@@ -24,28 +24,29 @@ export default function RequestDialog({room,onClose,onSuccess}:{room:Room|null;o
       .then(({ok,p})=>{
         if(!ok||!Array.isArray(p)){setError("تعذر تحميل قائمة المستهلكات");return}
         setItems(p);
-        setLines([{itemId:"",quantity:1}]);
+        setLines([{itemId:"",quantity:1,customLabel:""}]);
       })
       .catch(()=>setError("تعذر تحميل قائمة المستهلكات"))
       .finally(()=>setLoadingItems(false));
   },[room?.stayId]);
 
-  const selectedIds=useMemo(()=>new Set(lines.map(l=>l.itemId).filter(Boolean)),[lines]);
-  const canAddMore=items.some(i=>!selectedIds.has(i.id));
+  const selectedIds=useMemo(()=>new Set(lines.map(l=>l.itemId).filter(id=>Boolean(id)&&id!=="__custom__")),[lines]);
+  const canAddMore=items.some(i=>!selectedIds.has(i.id))||true;
   if(!room?.stayId)return null;
 
   function update(index:number,patch:Partial<Line>){setLines(prev=>prev.map((line,i)=>i===index?{...line,...patch}:line))}
   function addLine(){
-    if(canAddMore)setLines(prev=>[...prev,{itemId:"",quantity:1}]);
+    if(canAddMore)setLines(prev=>[...prev,{itemId:"",quantity:1,customLabel:""}]);
   }
   function removeLine(index:number){
-    setLines(prev=>prev.length<=1?[{itemId:"",quantity:1}]:prev.filter((_,i)=>i!==index));
+    setLines(prev=>prev.length<=1?[{itemId:"",quantity:1,customLabel:""}]:prev.filter((_,i)=>i!==index));
   }
 
   async function submit(e:FormEvent){
     e.preventDefault();
-    const payloadLines=lines.filter(l=>l.itemId&&l.quantity>0);
+    const payloadLines=lines.filter(l=>l.itemId&&l.quantity>0).map(l=>({...l,customLabel:l.customLabel?.trim()||undefined}));
     if(!payloadLines.length){setError("أضف صنفًا واحدًا على الأقل");return}
+    if(payloadLines.some(l=>l.itemId==="__custom__"&&!l.customLabel)){setError("اكتب اسم الصنف المخصص");return}
     setLoading(true);setError("");
     const response=await fetch("/api/requests",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({stayId:room!.stayId,lines:payloadLines,note:note.trim()||undefined})});
     const payload=await response.json().catch(()=>({}));
@@ -73,10 +74,12 @@ export default function RequestDialog({room,onClose,onSuccess}:{room:Room|null;o
             const item=items.find(i=>i.id===line.itemId);
             return <div className="request-line-editor premium-line" key={index}>
               <div className="line-main">
-                <select aria-label={"الصنف "+(index+1)} value={line.itemId} onChange={e=>update(index,{itemId:e.target.value})}>
+                <select aria-label={"الصنف "+(index+1)} value={line.itemId} onChange={e=>update(index,{itemId:e.target.value,customLabel:e.target.value==="__custom__"?line.customLabel:""})}>
                   <option value="">اختر الصنف</option>
                   {items.map(it=><option value={it.id} key={it.id} disabled={it.id!==line.itemId&&selectedIds.has(it.id)}>{it.name}</option>)}
+                  <option value="__custom__">صنف آخر — اكتب الاسم</option>
                 </select>
+                {line.itemId==="__custom__"?<input className="custom-item-input" value={line.customLabel||""} onChange={e=>update(index,{customLabel:e.target.value})} placeholder="اكتب اسم الصنف المطلوب" maxLength={80}/>:null}
                 <div className="qty-stepper">
                   <button type="button" aria-label="تقليل الكمية" onClick={()=>update(index,{quantity:Math.max(1,line.quantity-1)})}><Minus size={14}/></button>
                   <b>{line.quantity}</b><span>{item?.unit||"قطعة"}</span>

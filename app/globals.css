@@ -1331,3 +1331,17 @@ button,a,input,select{font-family:inherit}
   .checkout-history-filter{grid-template-columns:1fr}
   .history-filter-result{text-align:right}
 }
+
+
+/* Custom room-service item */
+.custom-item-input{height:40px;border:1px solid #dfe7e3;border-radius:10px;background:#fff;padding:0 10px;font:inherit;font-size:9px;color:var(--ink);outline:none;grid-column:1/-1}
+.custom-item-input:focus{border-color:#9fc5b7;box-shadow:0 0 0 3px rgba(21,95,75,.06)}
+
+/* Requests history and reporting */
+.requests-history-bar{display:grid;grid-template-columns:minmax(210px,1fr) auto auto auto;gap:12px;align-items:center;margin-bottom:14px;padding:14px 16px;border:1px solid #dfe8e4;border-radius:16px;background:#fff}
+.requests-history-copy{display:flex;align-items:center;gap:9px}.requests-history-copy>svg{color:#356a58}.requests-history-copy b{display:block;font-size:10px}.requests-history-copy span{display:block;margin-top:3px;color:#7b8984;font-size:8px}
+.requests-date-tabs{display:flex;gap:5px;flex-wrap:wrap}.requests-date-tabs button{height:34px;padding:0 10px;border:1px solid #dce5e1;border-radius:9px;background:#fff;color:#697771;font:inherit;font-size:8px;font-weight:800;cursor:pointer}.requests-date-tabs button.active{background:#eaf4ef;color:#155f4b;border-color:#cfe2da}
+.requests-custom-range{display:flex;gap:6px}.requests-custom-range label{font-size:7px;color:#788781}.requests-custom-range input{display:block;height:32px;margin-top:3px;border:1px solid #dce5e1;border-radius:8px;padding:0 7px;font:inherit;font-size:8px}
+.requests-history-result{text-align:center;min-width:76px}.requests-history-result b{display:block;font-size:17px;color:#155f4b}.requests-history-result span{font-size:7px;color:#7a8882}
+.reports-shortcut{height:36px;padding:0 11px;border-radius:9px;background:#155f4b;color:#fff;text-decoration:none;font-size:8px;font-weight:800;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+@media(max-width:1000px){.requests-history-bar{grid-template-columns:1fr}.requests-history-result{text-align:right}.reports-shortcut{width:max-content}}
