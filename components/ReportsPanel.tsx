@@ -1,189 +1,305 @@
 "use client";
 
-import { useEffect,useMemo,useState } from "react";
-import { ChartBar,DoorOpen,FilePdf,ListChecks,Package,Users } from "@phosphor-icons/react";
+import { useEffect,useMemo,useRef,useState } from "react";
+import { CalendarBlank,Clock,DownloadSimple,FilePdf,Package,Table,TrendUp } from "@phosphor-icons/react";
 
-type Summary={
-  businessDay:string;
-  roomStats:{total_rooms:number;available_rooms:number;occupied_rooms:number};
-  stayStats:{in_house:number;checked_out_total:number;checkins_today:number;checkouts_today:number};
-  requestStats:{total_requests:number;requests_today:number;awaiting_approval:number;active_requests:number;avg_delivery_minutes:number|null};
-  topItems:Array<{name:string;quantity:number}>;
+type RequestRow={
+  id:string;
+  room_number:string;
+  guest_name:string;
+  items:string;
+  status:string;
+  priority:string;
+  requested_at:string;
+  business_day?:string;
 };
 
+type DetailRow={
+  requestId:string;
+  requestedAt:string;
+  room:string;
+  guest:string;
+  item:string;
+  quantity:number;
+  status:string;
+};
+
+type Preset="today"|"yesterday"|"month"|"custom";
+type GroupBy="hour"|"day"|"month";
+type StatusMode="active"|"delivered"|"all";
+
+const statusLabels:Record<string,string>={
+  new:"جديد",acknowledged:"تم الاستلام",preparing:"جاري التجهيز",
+  approval_required:"بانتظار موافقة",delivered:"تم التسليم",cancelled:"ملغي"
+};
+
+function riyadhParts(date:Date){
+  const parts=new Intl.DateTimeFormat("en-CA",{
+    timeZone:"Asia/Riyadh",year:"numeric",month:"2-digit",day:"2-digit",
+    hour:"2-digit",minute:"2-digit",hourCycle:"h23"
+  }).formatToParts(date);
+  const read=(type:string)=>parts.find(p=>p.type===type)?.value||"00";
+  return {year:read("year"),month:read("month"),day:read("day"),hour:read("hour"),minute:read("minute")};
+}
+
+function toInput(date:Date){
+  const p=riyadhParts(date);
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
+function parseRiyadhInput(value:string){
+  if(!value)return NaN;
+  return Date.parse(value+":00+03:00");
+}
+
+function presetRange(preset:Preset){
+  const now=new Date();
+  const p=riyadhParts(now);
+  const today=`${p.year}-${p.month}-${p.day}`;
+  if(preset==="today") return {from:today+"T00:00",to:toInput(now)};
+  if(preset==="month") return {from:`${p.year}-${p.month}-01T00:00`,to:toInput(now)};
+  if(preset==="yesterday"){
+    const anchor=new Date(Date.parse(today+"T12:00:00+03:00")-86400000);
+    const y=riyadhParts(anchor);
+    const d=`${y.year}-${y.month}-${y.day}`;
+    return {from:d+"T00:00",to:d+"T23:59"};
+  }
+  return {from:today+"T00:00",to:toInput(now)};
+}
+
+function parseItems(value:string){
+  return String(value||"").split("،").map(x=>x.trim()).filter(Boolean).map(part=>{
+    const match=part.match(/^(.*?)\s*[×xX]\s*(\d+(?:\.\d+)?)\s*$/);
+    if(match)return {item:match[1].trim(),quantity:Number(match[2])||0};
+    return {item:part,quantity:1};
+  });
+}
+
+function formatDateTime(value:string){
+  return new Intl.DateTimeFormat("ar-SA",{
+    timeZone:"Asia/Riyadh",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"
+  }).format(new Date(value));
+}
+
+function saveBlob(blob:Blob,name:string){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 export default function ReportsPanel(){
-  const [data,setData]=useState<Summary|null>(null);
+  const initial=presetRange("today");
+  const [rows,setRows]=useState<RequestRow[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [exporting,setExporting]=useState<"pdf"|"xlsx"|null>(null);
   const [error,setError]=useState("");
-  const [generatedAt,setGeneratedAt]=useState<Date|null>(null);
+  const [preset,setPreset]=useState<Preset>("today");
+  const [from,setFrom]=useState(initial.from);
+  const [to,setTo]=useState(initial.to);
+  const [groupBy,setGroupBy]=useState<GroupBy>("day");
+  const [statusMode,setStatusMode]=useState<StatusMode>("active");
+  const reportRef=useRef<HTMLDivElement>(null);
 
   async function load(){
-    setError("");
-    const r=await fetch("/api/reports/summary",{cache:"no-store"});
-    if(r.status===401){window.location.href="/login";return}
-    const p=await r.json().catch(()=>null);
-    if(!r.ok||!p){setError("تعذر تحميل التقارير");return}
-    setData(p);setGeneratedAt(new Date());
+    setLoading(true);setError("");
+    try{
+      const response=await fetch("/api/requests?scope=all",{cache:"no-store"});
+      if(response.status===401){window.location.href="/login";return}
+      const payload=await response.json().catch(()=>[]);
+      if(!response.ok||!Array.isArray(payload))throw new Error("تعذر تحميل بيانات المستهلكات");
+      setRows(payload);
+    }catch(e){setError(e instanceof Error?e.message:"تعذر تحميل التقرير")}
+    finally{setLoading(false)}
   }
   useEffect(()=>{void load()},[]);
 
-  const occupancy=useMemo(()=>!data||!data.roomStats.total_rooms?0:Math.round((data.stayStats.in_house/data.roomStats.total_rooms)*100),[data]);
-
-  function escapeHtml(value:unknown){
-    return String(value??"")
-      .replaceAll("&","&amp;")
-      .replaceAll("<","&lt;")
-      .replaceAll(">","&gt;")
-      .replaceAll('"',"&quot;")
-      .replaceAll("'","&#039;");
-  }
-
-  function printPdf(){
-    if(!data)return;
-    const printWindow=window.open("","_blank","noopener,noreferrer,width=1000,height=800");
-    if(!printWindow){
-      setError("المتصفح منع نافذة الطباعة. اسمح بالنوافذ المنبثقة لـ Roomora ثم حاول مرة أخرى.");
-      return;
+  function applyPreset(next:Preset){
+    setPreset(next);
+    if(next!=="custom"){
+      const range=presetRange(next);
+      setFrom(range.from);setTo(range.to);
     }
-
-    const generated=generatedAt
-      ? generatedAt.toLocaleString("ar-SA",{timeZone:"Asia/Riyadh"})
-      : new Date().toLocaleString("ar-SA",{timeZone:"Asia/Riyadh"});
-
-    const topItemsHtml=data.topItems.length
-      ? data.topItems.map((x,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(x.name)}</td><td>${escapeHtml(x.quantity)}</td></tr>`).join("")
-      : '<tr><td colspan="3">لا توجد أصناف مطلوبة بعد.</td></tr>';
-
-    const avg=data.requestStats.avg_delivery_minutes==null
-      ? "—"
-      : Math.round(data.requestStats.avg_delivery_minutes)+" دقيقة";
-
-    printWindow.document.open();
-    printWindow.document.write(`<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8"/>
-<title>Roomora Report - ${escapeHtml(data.businessDay)}</title>
-<style>
-  @page{size:A4;margin:14mm}
-  *{box-sizing:border-box}
-  body{font-family:Arial,Tahoma,sans-serif;color:#14231e;background:#fff;margin:0}
-  .doc{width:100%;max-width:180mm;margin:0 auto}
-  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #184f40;padding-bottom:12px;margin-bottom:18px}
-  .brand{font-size:24px;font-weight:800;color:#184f40}.sub{font-size:11px;color:#728079;margin-top:3px}
-  .meta{text-align:left;font-size:11px;color:#6f7d77}.meta b{display:block;color:#14231e;font-size:13px;margin-top:3px}
-  h1{font-size:22px;margin:0 0 5px}.lead{font-size:11px;color:#6f7d77;margin:0}
-  .title{margin-bottom:18px}
-  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:16px}
-  .card{border:1px solid #dfe7e3;border-radius:12px;padding:12px;background:#fafcfa;break-inside:avoid}
-  .card span{display:block;font-size:9px;color:#7a8983}.card b{display:block;font-size:22px;margin-top:5px;color:#10211c}
-  .section{border:1px solid #dfe7e3;border-radius:14px;padding:14px;margin-bottom:14px;break-inside:avoid}
-  .section h2{font-size:14px;margin:0 0 10px;color:#184f40}
-  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-  .metric{background:#f7faf8;border:1px solid #e7ecea;border-radius:9px;padding:9px}
-  .metric span{display:block;font-size:8px;color:#7d8a85}.metric b{display:block;font-size:15px;margin-top:4px}
-  table{width:100%;border-collapse:collapse;font-size:10px}
-  th,td{padding:8px;border-bottom:1px solid #e7ecea;text-align:right}
-  th{background:#f4f8f6;color:#3b5d51}
-  .footer{text-align:center;color:#8a9691;font-size:8px;margin-top:18px}
-</style>
-</head>
-<body>
-  <div class="doc">
-    <div class="head">
-      <div><div class="brand">Roomora</div><div class="sub">Hotel Operations Report</div></div>
-      <div class="meta">يوم الفندق<b>${escapeHtml(data.businessDay)}</b><span>تم الإنشاء: ${escapeHtml(generated)}</span></div>
-    </div>
-
-    <div class="title">
-      <h1>التقرير التشغيلي</h1>
-      <p class="lead">ملخص الإشغال والإقامات وطلبات الخدمة الفعلية.</p>
-    </div>
-
-    <div class="grid">
-      <div class="card"><span>الإشغال الحالي</span><b>${data.stayStats.in_house} / ${data.roomStats.total_rooms}</b></div>
-      <div class="card"><span>دخول اليوم</span><b>${data.stayStats.checkins_today}</b></div>
-      <div class="card"><span>خروج اليوم</span><b>${data.stayStats.checkouts_today}</b></div>
-      <div class="card"><span>طلبات اليوم</span><b>${data.requestStats.requests_today}</b></div>
-    </div>
-
-    <div class="section">
-      <h2>الإشغال والغرف</h2>
-      <div class="metrics">
-        <div class="metric"><span>إجمالي الغرف</span><b>${data.roomStats.total_rooms}</b></div>
-        <div class="metric"><span>الغرف المتاحة</span><b>${data.roomStats.available_rooms}</b></div>
-        <div class="metric"><span>داخل الفندق</span><b>${data.stayStats.in_house}</b></div>
-        <div class="metric"><span>إجمالي المغادرات</span><b>${data.stayStats.checked_out_total}</b></div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>أداء الخدمة</h2>
-      <div class="metrics">
-        <div class="metric"><span>طلبات نشطة</span><b>${data.requestStats.active_requests}</b></div>
-        <div class="metric"><span>بانتظار موافقة</span><b>${data.requestStats.awaiting_approval}</b></div>
-        <div class="metric"><span>إجمالي الطلبات</span><b>${data.requestStats.total_requests}</b></div>
-        <div class="metric"><span>متوسط التسليم</span><b>${escapeHtml(avg)}</b></div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>الأصناف الأعلى طلبًا</h2>
-      <table>
-        <thead><tr><th>#</th><th>الصنف</th><th>الكمية</th></tr></thead>
-        <tbody>${topItemsHtml}</tbody>
-      </table>
-    </div>
-
-    <div class="footer">تم إنشاء هذا التقرير من بيانات Roomora التشغيلية · Asia/Riyadh</div>
-  </div>
-<script>
-  window.addEventListener("load",()=>setTimeout(()=>window.print(),250));
-</script>
-</body>
-</html>`);
-    printWindow.document.close();
   }
 
-  function downloadCsv(){
-    if(!data)return;
-    const rows=[
-      ["Roomora - تقرير التشغيل"],["يوم الفندق",data.businessDay],
-      ["إجمالي الغرف",data.roomStats.total_rooms],["الغرف المشغولة",data.stayStats.in_house],["الغرف المتاحة",data.roomStats.available_rooms],
-      ["دخول اليوم",data.stayStats.checkins_today],["خروج اليوم",data.stayStats.checkouts_today],
-      ["طلبات اليوم",data.requestStats.requests_today],["طلبات نشطة",data.requestStats.active_requests],["بانتظار موافقة",data.requestStats.awaiting_approval],
-      ["متوسط التسليم بالدقائق",data.requestStats.avg_delivery_minutes==null?"":Math.round(data.requestStats.avg_delivery_minutes)],
-      [],["الصنف","الكمية"],...data.topItems.map(x=>[x.name,x.quantity])
-    ];
-    const csv="\uFEFF"+rows.map(row=>row.map(v=>"\""+String(v??"").replaceAll("\"","\"\"")+"\"").join(",")).join("\n");
-    const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
-    const a=document.createElement("a");a.href=url;a.download="roomora-report-"+data.businessDay+".csv";a.click();URL.revokeObjectURL(url);
+  const filteredRequests=useMemo(()=>{
+    const start=parseRiyadhInput(from),end=parseRiyadhInput(to);
+    return rows.filter(row=>{
+      const time=Date.parse(row.requested_at);
+      if(!Number.isFinite(time)||time<start||time>end)return false;
+      if(statusMode==="delivered")return row.status==="delivered";
+      if(statusMode==="active")return row.status!=="cancelled";
+      return true;
+    });
+  },[rows,from,to,statusMode]);
+
+  const detailRows=useMemo<DetailRow[]>(()=>filteredRequests.flatMap(request=>
+    parseItems(request.items).map(line=>({
+      requestId:request.id,requestedAt:request.requested_at,room:request.room_number,
+      guest:request.guest_name,item:line.item,quantity:line.quantity,status:request.status
+    }))
+  ),[filteredRequests]);
+
+  const itemTotals=useMemo(()=>{
+    const map=new Map<string,{item:string;quantity:number;requests:Set<string>;rooms:Set<string>}>();
+    for(const row of detailRows){
+      const current=map.get(row.item)||{item:row.item,quantity:0,requests:new Set<string>(),rooms:new Set<string>()};
+      current.quantity+=row.quantity;current.requests.add(row.requestId);current.rooms.add(row.room);map.set(row.item,current);
+    }
+    return Array.from(map.values()).map(x=>({item:x.item,quantity:x.quantity,requests:x.requests.size,rooms:x.rooms.size})).sort((a,b)=>b.quantity-a.quantity);
+  },[detailRows]);
+
+  const grouped=useMemo(()=>{
+    const map=new Map<string,number>();
+    for(const row of detailRows){
+      const d=new Date(row.requestedAt);
+      const p=riyadhParts(d);
+      const key=groupBy==="hour"?`${p.year}-${p.month}-${p.day} ${p.hour}:00`:groupBy==="month"?`${p.year}-${p.month}`:`${p.year}-${p.month}-${p.day}`;
+      map.set(key,(map.get(key)||0)+row.quantity);
+    }
+    return Array.from(map.entries()).map(([label,quantity])=>({label,quantity})).sort((a,b)=>a.label.localeCompare(b.label));
+  },[detailRows,groupBy]);
+
+  const totalQty=detailRows.reduce((sum,row)=>sum+row.quantity,0);
+  const top=itemTotals[0];
+
+  async function exportXlsx(){
+    if(!itemTotals.length){setError("لا توجد بيانات لتصديرها ضمن الفترة المحددة.");return}
+    setExporting("xlsx");setError("");
+    try{
+      const {Workbook}=await import("exceljs");
+      const wb=new Workbook();
+      wb.creator="Roomora";wb.created=new Date();
+      const summary=wb.addWorksheet("ملخص المستهلكات",{views:[{rightToLeft:true}]});
+      summary.columns=[
+        {header:"الصنف",key:"item",width:28},{header:"إجمالي الكمية",key:"quantity",width:18},
+        {header:"عدد الطلبات",key:"requests",width:16},{header:"عدد الغرف",key:"rooms",width:14}
+      ];
+      itemTotals.forEach(x=>summary.addRow(x));
+      summary.spliceRows(1,0,["Roomora - تقرير استهلاك المستهلكات"]);
+      summary.spliceRows(2,0,[`الفترة: ${from.replace("T"," ")} إلى ${to.replace("T"," ")}`]);
+      summary.mergeCells("A1:D1");summary.mergeCells("A2:D2");
+      summary.getCell("A1").font={bold:true,size:18,color:{argb:"FFFFFFFF"}};
+      summary.getCell("A1").fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF155F4B"}};
+      summary.getCell("A1").alignment={horizontal:"center"};
+      summary.getCell("A2").font={bold:true,color:{argb:"FF355B4E"}};summary.getCell("A2").alignment={horizontal:"center"};
+      const header=summary.getRow(3);
+      header.font={bold:true,color:{argb:"FFFFFFFF"}};
+      header.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF2E6B58"}};
+      header.alignment={horizontal:"center"};
+      summary.eachRow((row,index)=>{if(index>3){row.height=22;row.eachCell(cell=>{cell.alignment={horizontal:"center",vertical:"middle"};cell.border={bottom:{style:"hair",color:{argb:"FFDDE7E2"}}};});}});
+      summary.autoFilter={from:"A3",to:"D3"};
+      summary.freezePanes={ySplit:3} as never;
+
+      const details=wb.addWorksheet("تفاصيل الطلبات",{views:[{rightToLeft:true}]});
+      details.columns=[
+        {header:"التاريخ والوقت",key:"time",width:24},{header:"الغرفة",key:"room",width:12},
+        {header:"النزيل",key:"guest",width:24},{header:"الصنف",key:"item",width:26},
+        {header:"الكمية",key:"quantity",width:12},{header:"الحالة",key:"status",width:18}
+      ];
+      detailRows.forEach(x=>details.addRow({time:formatDateTime(x.requestedAt),room:x.room,guest:x.guest,item:x.item,quantity:x.quantity,status:statusLabels[x.status]||x.status}));
+      details.getRow(1).font={bold:true,color:{argb:"FFFFFFFF"}};
+      details.getRow(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF155F4B"}};
+      details.getRow(1).alignment={horizontal:"center"};
+      details.autoFilter={from:"A1",to:"F1"};
+      details.views=[{rightToLeft:true,state:"frozen",ySplit:1}];
+
+      const timeline=wb.addWorksheet("التجميع الزمني",{views:[{rightToLeft:true}]});
+      timeline.columns=[{header:"الفترة",key:"label",width:25},{header:"إجمالي الكمية",key:"quantity",width:18}];
+      grouped.forEach(x=>timeline.addRow(x));
+      timeline.getRow(1).font={bold:true,color:{argb:"FFFFFFFF"}};
+      timeline.getRow(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFC89A52"}};
+
+      const buffer=await wb.xlsx.writeBuffer();
+      saveBlob(new Blob([new Uint8Array(buffer)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.xlsx`);
+    }catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء ملف Excel")}
+    finally{setExporting(null)}
   }
 
-  return <main className="settings-page report-print-page">
-    <header className="settings-header premium-page-head report-page-head"><div><span className="section-kicker">OPERATIONS INTELLIGENCE</span><h1>التقرير التشغيلي</h1><p>ملخص يوم الفندق من بيانات الإقامات وطلبات الخدمة الفعلية.</p></div><div className="report-actions"><button className="secondary-btn" onClick={downloadCsv}>تنزيل Excel / CSV</button><button className="primary-btn print-report-btn" onClick={printPdf}><FilePdf size={18}/> حفظ PDF / طباعة</button></div></header>
+  async function exportPdf(){
+    const node=reportRef.current;
+    if(!node||!itemTotals.length){setError("لا توجد بيانات لتصديرها ضمن الفترة المحددة.");return}
+    setExporting("pdf");setError("");
+    try{
+      const [{default:html2canvas},{jsPDF}]=await Promise.all([import("html2canvas"),import("jspdf")]);
+      const canvas=await html2canvas(node,{scale:2.2,useCORS:true,backgroundColor:"#ffffff",logging:false,windowWidth:node.scrollWidth,windowHeight:node.scrollHeight});
+      const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4",compress:true});
+      const pageW=210,pageH=297,margin=10,usableW=pageW-margin*2,usableH=pageH-margin*2;
+      const pxPerMm=canvas.width/usableW;
+      const pageSlicePx=Math.floor(usableH*pxPerMm);
+      let offset=0,page=0;
+      while(offset<canvas.height){
+        const sliceH=Math.min(pageSlicePx,canvas.height-offset);
+        const part=document.createElement("canvas");
+        part.width=canvas.width;part.height=sliceH;
+        const ctx=part.getContext("2d");
+        if(!ctx)throw new Error("تعذر تجهيز صفحة PDF");
+        ctx.fillStyle="#ffffff";ctx.fillRect(0,0,part.width,part.height);
+        ctx.drawImage(canvas,0,offset,canvas.width,sliceH,0,0,canvas.width,sliceH);
+        if(page>0)pdf.addPage();
+        const hMm=sliceH/pxPerMm;
+        pdf.addImage(part.toDataURL("image/jpeg",0.94),"JPEG",margin,margin,usableW,hMm,undefined,"FAST");
+        offset+=sliceH;page++;
+      }
+      pdf.save(`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.pdf`);
+    }catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء ملف PDF")}
+    finally{setExporting(null)}
+  }
 
-    {error?<div className="rooms-state error">{error}</div>:!data?<div className="rooms-state">جاري تجهيز التقرير…</div>:<>
-      <section className="report-document-head"><div><b>Roomora</b><span>Hotel Operations Report</span></div><div><span>يوم الفندق</span><b>{data.businessDay}</b><small>{generatedAt?"تم الإنشاء "+generatedAt.toLocaleString("ar-SA",{timeZone:"Asia/Riyadh"}):""}</small></div></section>
+  return <main className="settings-page consumables-report-page">
+    <header className="settings-header premium-page-head">
+      <div><span className="section-kicker">CONSUMPTION ANALYTICS</span><h1>تقرير استهلاك المستهلكات</h1><p>كمية كل صنف تم طلبها خلال فترة زمنية محددة، مع تحليل حسب الساعة أو اليوم أو الشهر.</p></div>
+      <div className="report-actions">
+        <button className="secondary-btn" disabled={Boolean(exporting)||!itemTotals.length} onClick={()=>void exportXlsx()}><Table size={18}/>{exporting==="xlsx"?"جاري إنشاء Excel…":"تنزيل Excel XLSX"}</button>
+        <button className="primary-btn" disabled={Boolean(exporting)||!itemTotals.length} onClick={()=>void exportPdf()}><FilePdf size={18}/>{exporting==="pdf"?"جاري إنشاء PDF…":"تنزيل PDF"}</button>
+      </div>
+    </header>
 
-      <section className="report-hero-grid">
-        <article><DoorOpen size={22}/><div><span>الإشغال الحالي</span><b>{data.stayStats.in_house} <small>/ {data.roomStats.total_rooms}</small></b><em>{occupancy}%</em></div></article>
-        <article><Users size={22}/><div><span>دخول اليوم</span><b>{data.stayStats.checkins_today}</b><small>نزيل / إقامة</small></div></article>
-        <article><Users size={22}/><div><span>خروج اليوم</span><b>{data.stayStats.checkouts_today}</b><small>خروج مكتمل</small></div></article>
-        <article><ListChecks size={22}/><div><span>طلبات اليوم</span><b>{data.requestStats.requests_today}</b><small>{data.requestStats.active_requests} نشط الآن</small></div></article>
+    <section className="panel consumption-filters">
+      <div className="preset-tabs">
+        {([["today","اليوم"],["yesterday","أمس"],["month","هذا الشهر"],["custom","مخصص"]] as Array<[Preset,string]>).map(([key,label])=><button key={key} className={preset===key?"active":""} onClick={()=>applyPreset(key)}>{label}</button>)}
+      </div>
+      <div className="date-filter-grid">
+        <label><span>من التاريخ والساعة</span><div><CalendarBlank size={17}/><input type="datetime-local" value={from} onChange={e=>{setPreset("custom");setFrom(e.target.value)}}/></div></label>
+        <label><span>إلى التاريخ والساعة</span><div><Clock size={17}/><input type="datetime-local" value={to} onChange={e=>{setPreset("custom");setTo(e.target.value)}}/></div></label>
+        <label><span>تجميع زمني</span><select value={groupBy} onChange={e=>setGroupBy(e.target.value as GroupBy)}><option value="hour">حسب الساعة</option><option value="day">حسب اليوم</option><option value="month">حسب الشهر</option></select></label>
+        <label><span>حالة الطلب</span><select value={statusMode} onChange={e=>setStatusMode(e.target.value as StatusMode)}><option value="active">كل الطلبات غير الملغاة</option><option value="delivered">تم التسليم فقط</option><option value="all">كل الطلبات بما فيها الملغاة</option></select></label>
+      </div>
+    </section>
+
+    {error?<div className="login-error page-error">{error}</div>:null}
+    {loading?<div className="rooms-state">جاري تحليل استهلاك المستهلكات…</div>:
+    <div ref={reportRef} className="consumption-export-document">
+      <section className="consumption-doc-head">
+        <div><b>Roomora</b><span>Consumables Consumption Report</span></div>
+        <div><span>الفترة</span><b>{from.replace("T"," ")} ← {to.replace("T"," ")}</b><small>Asia/Riyadh</small></div>
       </section>
 
-      <section className="panel report-section occupancy-section">
-        <div className="report-section-title"><div><ChartBar size={20}/><div><h2>الإشغال والغرف</h2><p>صورة تشغيلية للحالة الحالية.</p></div></div><strong>{occupancy}% إشغال</strong></div>
-        <div className="occupancy-bar"><span style={{width:occupancy+"%"}}/></div>
-        <div className="report-metrics pro-report-metrics"><div><span>إجمالي الغرف</span><b>{data.roomStats.total_rooms}</b></div><div><span>متاحة</span><b>{data.roomStats.available_rooms}</b></div><div><span>داخل الفندق</span><b>{data.stayStats.in_house}</b></div><div><span>إجمالي المغادرات</span><b>{data.stayStats.checked_out_total}</b></div></div>
+      <section className="consumption-kpis">
+        <article><Package size={22}/><div><span>إجمالي الكميات</span><b>{totalQty}</b><small>وحدة مستهلكة / مطلوبة</small></div></article>
+        <article><TrendUp size={22}/><div><span>أعلى صنف</span><b>{top?.item||"—"}</b><small>{top?top.quantity+" وحدة":"لا توجد بيانات"}</small></div></article>
+        <article><DownloadSimple size={22}/><div><span>عدد الطلبات</span><b>{filteredRequests.length}</b><small>طلب ضمن الفترة</small></div></article>
+        <article><Table size={22}/><div><span>عدد الأصناف</span><b>{itemTotals.length}</b><small>صنف مختلف</small></div></article>
       </section>
 
-      <div className="report-two-col">
-        <section className="panel report-section"><div className="report-section-title"><div><ListChecks size={20}/><div><h2>أداء الخدمة</h2><p>حركة طلبات الغرف.</p></div></div></div><div className="report-metrics pro-report-metrics"><div><span>طلبات نشطة</span><b>{data.requestStats.active_requests}</b></div><div><span>بانتظار موافقة</span><b>{data.requestStats.awaiting_approval}</b></div><div><span>إجمالي الطلبات</span><b>{data.requestStats.total_requests}</b></div><div><span>متوسط التسليم</span><b>{data.requestStats.avg_delivery_minutes==null?"—":Math.round(data.requestStats.avg_delivery_minutes)+" د"}</b></div></div></section>
-        <section className="panel report-section"><div className="report-section-title"><div><Package size={20}/><div><h2>الأصناف الأعلى طلبًا</h2><p>الكميات غير الملغاة.</p></div></div></div><div className="top-items pro-top-items">{data.topItems.length?data.topItems.map((x,i)=><div key={x.name}><span>{i+1}</span><b>{x.name}</b><em>{x.quantity}</em></div>):<p className="detail-empty">لا توجد طلبات أصناف بعد.</p>}</div></section>
+      <section className="panel consumption-table-card">
+        <div className="report-section-title"><div><Package size={20}/><div><h2>إجمالي الاستهلاك حسب الصنف</h2><p>البيانات الأساسية المطلوبة للمخزون والمتابعة اليومية.</p></div></div></div>
+        {itemTotals.length?<div className="consumption-table-wrap"><table className="consumption-table"><thead><tr><th>#</th><th>الصنف</th><th>إجمالي الكمية</th><th>عدد الطلبات</th><th>عدد الغرف</th><th>النسبة من الاستهلاك</th></tr></thead><tbody>{itemTotals.map((x,i)=><tr key={x.item}><td>{i+1}</td><td><b>{x.item}</b></td><td><strong>{x.quantity}</strong></td><td>{x.requests}</td><td>{x.rooms}</td><td><div className="usage-bar"><span style={{width:(totalQty?Math.round(x.quantity/totalQty*100):0)+"%"}}/></div><small>{totalQty?Math.round(x.quantity/totalQty*100):0}%</small></td></tr>)}</tbody></table></div>:<div className="empty-pro-state"><Package size={28}/><b>لا يوجد استهلاك في هذه الفترة</b><span>غيّر الفترة الزمنية أو حالة الطلب.</span></div>}
+      </section>
+
+      <div className="consumption-report-grid">
+        <section className="panel consumption-table-card">
+          <div className="report-section-title"><div><Clock size={20}/><div><h2>التوزيع الزمني</h2><p>{groupBy==="hour"?"حسب الساعة":groupBy==="month"?"حسب الشهر":"حسب اليوم"}</p></div></div></div>
+          <div className="timeline-consumption">{grouped.map(x=><div key={x.label}><span>{x.label}</span><div><i style={{width:(totalQty?Math.max(4,x.quantity/totalQty*100):0)+"%"}}/></div><b>{x.quantity}</b></div>)}</div>
+        </section>
+
+        <section className="panel consumption-table-card">
+          <div className="report-section-title"><div><Table size={20}/><div><h2>تفاصيل الاستخدام</h2><p>آخر تفاصيل الطلبات ضمن الفترة.</p></div></div></div>
+          <div className="detail-usage-list">{detailRows.slice(0,30).map((x,i)=><div key={x.requestId+x.item+i}><div><b>{x.item}</b><span>غرفة {x.room} · {x.guest}</span></div><div><strong>{x.quantity}</strong><small>{formatDateTime(x.requestedAt)}</small></div></div>)}</div>
+        </section>
       </div>
 
-      <footer className="report-foot">تم إنشاء هذا التقرير من بيانات Roomora التشغيلية · التوقيت Asia/Riyadh</footer>
-    </>}
+      <footer className="report-foot">Roomora · تقرير استهلاك المستهلكات · تم توليده من طلبات الغرف المسجلة في النظام</footer>
+    </div>}
   </main>;
 }
