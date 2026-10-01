@@ -28,6 +28,7 @@ export default function GuestsPanel(){
   const [deleteError,setDeleteError]=useState("");
   const [exportingCheckoutPdf,setExportingCheckoutPdf]=useState(false);
   const [exportError,setExportError]=useState("");
+  const [historyDate,setHistoryDate]=useState("");
 
   async function load(silent=false){
     if(!silent)setLoading(true);
@@ -90,6 +91,24 @@ export default function GuestsPanel(){
     return rows
       .filter(x=>x.status==="checked_out"&&Boolean(x.actual_checkout_at))
       .sort((a,b)=>new Date(b.actual_checkout_at||0).getTime()-new Date(a.actual_checkout_at||0).getTime());
+  }
+
+  function historyRowsForDate(dateKey:string){
+    const source=checkoutHistoryRows();
+    return dateKey?source.filter(x=>x.actual_checkout_at&&riyadhDateKey(x.actual_checkout_at)===dateKey):source;
+  }
+
+  function dateKeyOffset(days:number){
+    const today=riyadhDateKey(new Date());
+    const base=new Date(today+"T12:00:00Z");
+    base.setUTCDate(base.getUTCDate()+days);
+    return base.toISOString().slice(0,10);
+  }
+
+  function historyDateLabel(dateKey:string){
+    if(!dateKey)return "كل سجل الخروج";
+    const date=new Date(dateKey+"T12:00:00Z");
+    return new Intl.DateTimeFormat("ar-SA",{timeZone:"UTC",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(date);
   }
 
   async function exportCheckoutPdf(){
@@ -205,14 +224,15 @@ export default function GuestsPanel(){
 
   const todayCheckoutCount=useMemo(()=>todayCheckoutRows().length,[rows]);
   const checkoutHistoryCount=useMemo(()=>checkoutHistoryRows().length,[rows]);
+  const filteredHistoryCount=useMemo(()=>historyRowsForDate(historyDate).length,[rows,historyDate]);
 
   const filtered=useMemo(()=>{
-    const source=checkoutView?todayCheckoutRows():checkoutHistoryView?checkoutHistoryRows():rows;
+    const source=checkoutView?todayCheckoutRows():checkoutHistoryView?historyRowsForDate(historyDate):rows;
     return source.filter(x=>{
       const text=(x.guest_name+" "+(x.guest_phone||"")+" "+x.room_number).toLowerCase();
       return (checkoutSection||scope==="all"||x.status===scope)&&(!q||text.includes(q.toLowerCase()));
     });
-  },[rows,q,scope,checkoutView,checkoutHistoryView,checkoutSection]);
+  },[rows,q,scope,checkoutView,checkoutHistoryView,checkoutSection,historyDate]);
 
   function d(v?:string|null){if(!v)return "—";return new Intl.DateTimeFormat("ar-SA",{timeZone:"Asia/Riyadh",day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(v));}
   function phone(v?:string|null){if(!v)return "غير مسجل";const s=v.replace(/\s+/g,"");return s.length>5?s.slice(0,2)+"•••••"+s.slice(-3):"••••";}
@@ -221,7 +241,7 @@ export default function GuestsPanel(){
     <header className="settings-header premium-page-head"><div><Link href="/" className="back-link"><ArrowRight size={16}/> العودة للوحة التشغيل</Link><span className="section-kicker">GUEST DIRECTORY</span><h1>النزلاء والإقامات</h1><p>السجل الحالي والتاريخي للنزلاء المرتبط بالإقامات والغرف.</p></div><button className="primary-btn checkout-pdf-btn" onClick={()=>void exportCheckoutPdf()} disabled={exportingCheckoutPdf}><FilePdf size={18}/>{exportingCheckoutPdf?"جاري إنشاء الكشف…":"كشف خروج اليوم PDF"}</button></header>
     {exportError?<div className="login-error page-error">{exportError}</div>:null}
     {checkoutSection?<section className="checkout-today-banner checkout-workspace-banner">
-      <div className="checkout-today-copy"><CalendarCheck size={24}/><div><span className="section-kicker">{checkoutView?"TODAY CHECKOUT":"CHECKOUT HISTORY"}</span><h2>{checkoutView?"خروج اليوم":"سجل الخروج"}</h2><p>{checkoutView?<>الحجوزات المقرر خروجها حسب تاريخ الرياض الحالي: <b>{todayCheckoutCount}</b></>:<>إجمالي حالات الخروج المسجلة: <b>{checkoutHistoryCount}</b></>}</p></div></div>
+      <div className="checkout-today-copy"><CalendarCheck size={24}/><div><span className="section-kicker">{checkoutView?"TODAY CHECKOUT":"CHECKOUT HISTORY"}</span><h2>{checkoutView?"خروج اليوم":"سجل الخروج"}</h2><p>{checkoutView?<>الحجوزات المقرر خروجها حسب تاريخ الرياض الحالي: <b>{todayCheckoutCount}</b></>:historyDate?<><span>{historyDateLabel(historyDate)}</span> · عدد حالات الخروج: <b>{filteredHistoryCount}</b></>:<>إجمالي حالات الخروج المسجلة: <b>{checkoutHistoryCount}</b></>}</p></div></div>
       <div className="checkout-workspace-actions">
         <div className="checkout-view-tabs">
           <Link href="/guests?view=checkout-today" className={checkoutView?"active":""}>خروج اليوم</Link>
@@ -229,6 +249,16 @@ export default function GuestsPanel(){
         </div>
         {checkoutView?<button className="primary-btn checkout-pdf-btn prominent" onClick={()=>void exportCheckoutPdf()} disabled={exportingCheckoutPdf||todayCheckoutCount===0}><FilePdf size={18}/>{exportingCheckoutPdf?"جاري إنشاء الكشف…":"تنزيل كشف خروج اليوم PDF"}</button>:null}
       </div>
+    </section>:null}
+    {checkoutHistoryView?<section className="checkout-history-filter">
+      <div className="history-filter-copy"><CalendarCheck size={18}/><div><b>فلترة سجل الخروج بالتاريخ</b><span>اختر تاريخًا لعرض من تم تسجيل خروجهم فعليًا في ذلك اليوم.</span></div></div>
+      <div className="history-filter-controls">
+        <input type="date" value={historyDate} onChange={e=>setHistoryDate(e.target.value)} aria-label="تاريخ سجل الخروج"/>
+        <button type="button" className={historyDate===dateKeyOffset(0)?"active":""} onClick={()=>setHistoryDate(dateKeyOffset(0))}>اليوم</button>
+        <button type="button" className={historyDate===dateKeyOffset(-1)?"active":""} onClick={()=>setHistoryDate(dateKeyOffset(-1))}>أمس</button>
+        <button type="button" className={!historyDate?"active":""} onClick={()=>setHistoryDate("")}>كل السجل</button>
+      </div>
+      <div className="history-filter-result"><span>{historyDate?historyDateLabel(historyDate):"كل التواريخ"}</span><b>{filteredHistoryCount}</b><small>{filteredHistoryCount===1?"حالة خروج":"حالات خروج"}</small></div>
     </section>:null}
     <section className="panel rooms-directory">
       <div className="directory-toolbar"><div className="search wide"><MagnifyingGlass size={17}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ابحث باسم النزيل أو الجوال أو الغرفة"/></div><select value={scope} onChange={e=>setScope(e.target.value)}><option value="all">كل الإقامات</option><option value="in_house">داخل الفندق</option><option value="checked_out">غادر</option><option value="cancelled">ملغاة</option></select></div>
