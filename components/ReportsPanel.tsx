@@ -254,7 +254,8 @@ export default function ReportsPanel(){
       add("xl/worksheets/sheet3.xml",sheetXml(timelineRows,[25,18]));
 
       const zipped=zipSync(files,{level:6});
-      const zippedBuffer=zipped.buffer.slice(zipped.byteOffset,zipped.byteOffset+zipped.byteLength) as ArrayBuffer;\n      saveBlob(new Blob([zippedBuffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.xlsx`);
+      const zippedBuffer=zipped.buffer.slice(zipped.byteOffset,zipped.byteOffset+zipped.byteLength) as ArrayBuffer;
+      saveBlob(new Blob([zippedBuffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.xlsx`);
     }catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء ملف Excel")}
     finally{setExporting(null)}
   }
