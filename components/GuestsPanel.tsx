@@ -1,6 +1,7 @@
 "use client";
 import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight,MagnifyingGlass,Phone,Eye,Trash,WarningCircle,FilePdf,CalendarCheck } from "@phosphor-icons/react";
 import StayDetailDialog from "@/components/StayDetailDialog";
 import { getHotelBusinessDay } from "@/lib/business-day";
@@ -12,7 +13,8 @@ type StayRow={
 };
 
 export default function GuestsPanel(){
-  const [checkoutView,setCheckoutView]=useState(false);
+  const searchParams=useSearchParams();
+  const checkoutView=searchParams.get("view")==="checkout-today";
   const [rows,setRows]=useState<StayRow[]>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
@@ -37,13 +39,6 @@ export default function GuestsPanel(){
   }
 
   useEffect(()=>{void load();},[]);
-
-  useEffect(()=>{
-    const view=new URLSearchParams(window.location.search).get("view");
-    const isCheckout=view==="checkout-today";
-    setCheckoutView(isCheckout);
-    if(isCheckout){setScope("all");setQ("");}
-  },[]);
 
   async function deleteStay(id:string){
     if(role!=="admin"||deletingId)return;
