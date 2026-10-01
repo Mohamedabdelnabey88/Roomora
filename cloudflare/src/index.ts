@@ -610,6 +610,101 @@ export default {
       });
     }
 
+    if (url.pathname.match(/^\/api\/stays\/[^/]+$/) && request.method === "PATCH") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+      if (actor.role !== "admin") return json({ error:"forbidden" }, { status:403 });
+
+      const stayId = url.pathname.split("/")[3] || "";
+      const current = await env.DB.prepare(`
+        SELECT id, guest_name, guest_phone, status, checkin_at, expected_checkout_at, actual_checkout_at
+        FROM stays
+        WHERE id=?1
+        LIMIT 1
+      `).bind(stayId).first<{
+        id:string; guest_name:string; guest_phone:string|null; status:string;
+        checkin_at:string; expected_checkout_at:string; actual_checkout_at:string|null;
+      }>();
+
+      if (!current) return json({ error:"stay_not_found" }, { status:404 });
+
+      const body = await readJson<{
+        guestName?:string;
+        guestPhone?:string|null;
+        checkinAt?:string;
+        expectedCheckoutAt?:string;
+        actualCheckoutAt?:string|null;
+      }>(request);
+
+      const guestName = body?.guestName?.trim() || "";
+      const guestPhone = body?.guestPhone?.trim() || null;
+      const checkin = new Date(body?.checkinAt || "");
+      const expected = new Date(body?.expectedCheckoutAt || "");
+      const actualRaw = body?.actualCheckoutAt?.trim() || "";
+      const actual = actualRaw ? new Date(actualRaw) : null;
+
+      if (!guestName) return json({ error:"invalid_guest_name" }, { status:400 });
+      if (!Number.isFinite(checkin.getTime())) return json({ error:"invalid_checkin_time" }, { status:400 });
+      if (!Number.isFinite(expected.getTime())) return json({ error:"invalid_checkout_time" }, { status:400 });
+      if (expected.getTime() <= checkin.getTime()) return json({ error:"checkout_before_checkin" }, { status:400 });
+      if (actual && !Number.isFinite(actual.getTime())) return json({ error:"invalid_actual_checkout_time" }, { status:400 });
+      if (actual && actual.getTime() < checkin.getTime()) return json({ error:"actual_checkout_before_checkin" }, { status:400 });
+      if (current.status === "in_house" && actual) return json({ error:"active_stay_cannot_have_actual_checkout" }, { status:409 });
+      if (current.status === "checked_out" && !actual) return json({ error:"checked_out_requires_actual_checkout" }, { status:400 });
+
+      const nextActual = current.status === "checked_out" ? actual!.toISOString() : null;
+
+      await env.DB.prepare(`
+        UPDATE stays
+        SET guest_name=?1,
+            guest_phone=?2,
+            checkin_at=?3,
+            expected_checkout_at=?4,
+            actual_checkout_at=?5,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE id=?6
+      `).bind(
+        guestName,
+        guestPhone,
+        checkin.toISOString(),
+        expected.toISOString(),
+        nextActual,
+        stayId
+      ).run();
+
+      await env.DB.prepare(`
+        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
+        VALUES (?1, 'stay_corrected', 'stay', ?2, ?3)
+      `).bind(actor.id, stayId, JSON.stringify({
+        before:{
+          guestName:current.guest_name,
+          guestPhone:current.guest_phone,
+          checkinAt:current.checkin_at,
+          expectedCheckoutAt:current.expected_checkout_at,
+          actualCheckoutAt:current.actual_checkout_at
+        },
+        after:{
+          guestName,
+          guestPhone,
+          checkinAt:checkin.toISOString(),
+          expectedCheckoutAt:expected.toISOString(),
+          actualCheckoutAt:nextActual
+        }
+      })).run();
+
+      return json({
+        ok:true,
+        stay:{
+          id:stayId,
+          guest_name:guestName,
+          guest_phone:guestPhone,
+          checkin_at:checkin.toISOString(),
+          expected_checkout_at:expected.toISOString(),
+          actual_checkout_at:nextActual
+        }
+      });
+    }
+
     if (url.pathname.match(/^\/api\/stays\/[^/]+$/) && request.method === "GET") {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error:"unauthorized" }, { status:401 });

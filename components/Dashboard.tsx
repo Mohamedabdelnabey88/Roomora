@@ -41,8 +41,8 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<"all"|Room["status"]>("all");
   const [lastSync, setLastSync] = useState<Date|null>(null);
 
-  async function loadRooms() {
-    setLoadingRooms(true);
+  async function loadRooms(silent=false) {
+    if(!silent) setLoadingRooms(true);
     return fetch("/api/rooms", { cache: "no-store" })
       .then(async (res) => {
         if (res.status === 401) { window.location.href = "/login"; throw new Error("unauthorized"); }
@@ -57,7 +57,7 @@ export default function Dashboard() {
         setLastSync(new Date());
       })
       .catch(() => setDataError("تعذر الاتصال بقاعدة بيانات الفندق"))
-      .finally(() => setLoadingRooms(false));
+      .finally(() => { if(!silent) setLoadingRooms(false); });
   }
 
   async function loadRequests() {
@@ -75,13 +75,13 @@ export default function Dashboard() {
   }
 
   async function refreshOperations() {
-    await Promise.all([loadRooms(),loadRequests()]);
+    await Promise.all([loadRooms(true),loadRequests()]);
   }
 
   useEffect(() => {
-    void Promise.all([loadRooms(),loadRequests(),loadCurrentUser()]);
+    void Promise.all([loadRooms(false),loadRequests(),loadCurrentUser()]);
     const refresh = () => { void refreshOperations(); };
-    const timer = window.setInterval(refresh, 15000);
+    const timer = window.setInterval(refresh, 30000);
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") refresh();
     };

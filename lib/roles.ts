@@ -15,6 +15,7 @@ export const roleCapabilities:Capability[]=[
   {key:"reports.view",label:"عرض التقارير",description:"مشاهدة مؤشرات التشغيل وتصدير التقرير.",reception:true,admin:true},
   {key:"approvals.decide",label:"قرارات تجاوز الحدود",description:"الموافقة أو الرفض عندما يتجاوز الطلب الحدود.",reception:false,admin:true},
   {key:"requests.delete",label:"الحذف النهائي للطلبات",description:"حذف طلب خدمة نهائيًا مع أصنافه والموافقة المرتبطة به.",reception:false,admin:true},
+  {key:"stays.edit",label:"تصحيح بيانات الحجز والإقامة",description:"تعديل بيانات النزيل ومواعيد الدخول والخروج لتصحيح أخطاء التسجيل.",reception:false,admin:true},
   {key:"stays.delete",label:"حذف النزيل والحجز نهائيًا",description:"حذف ملف الإقامة وكل الطلبات والتمديدات المرتبطة به، مع تحرير الغرفة إذا كانت الإقامة نشطة.",reception:false,admin:true},
   {key:"guests.private",label:"ملف الإقامة التفصيلي",description:"فتح الملف الإداري الكامل وسجل التمديدات والطلبات.",reception:false,admin:true},
   {key:"employees.manage",label:"إدارة الموظفين",description:"إنشاء الحسابات وتفعيلها أو تعطيلها.",reception:false,admin:true},

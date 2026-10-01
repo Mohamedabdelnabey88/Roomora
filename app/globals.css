@@ -1220,3 +1220,26 @@ button,a,input,select{font-family:inherit}
 .guest-danger-zone{
   margin-top:16px;padding:14px;border:1px solid #f0d8d6;border-radius:16px;background:linear-gradient(145deg,#fffafa,#fff)
 }
+
+
+/* Admin stay correction */
+.stay-file-title-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.stay-file-title-row h2{margin-left:auto}
+.edit-stay-btn{
+  min-height:34px;padding:0 11px;border:1px solid #d7e4df;border-radius:10px;background:#f7fbf9;
+  color:#285f4d;font:inherit;font-size:8px;font-weight:800;display:inline-flex;align-items:center;gap:6px;cursor:pointer
+}
+.edit-stay-btn:hover{background:#eef7f3;border-color:#bfd5cd}
+.stay-edit-card{margin:14px 0;padding:15px;border:1px solid #dce8e3;border-radius:16px;background:linear-gradient(145deg,#f8fcfa,#fff)}
+.stay-edit-head{display:flex;align-items:flex-start;gap:9px;color:#2f6754;margin-bottom:13px}
+.stay-edit-head b{display:block;font-size:10px}.stay-edit-head span{display:block;font-size:8px;color:#7c8b85;margin-top:3px}
+.stay-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stay-edit-grid label>span{display:block;font-size:8px;color:#6f7f79;font-weight:700;margin-bottom:6px}
+.stay-edit-grid input{
+  width:100%;height:40px;border:1px solid #dce5e1;border-radius:10px;background:#fff;padding:0 10px;
+  font:inherit;font-size:9px;color:#203b31;outline:none
+}
+.stay-edit-grid input:focus{border-color:#9ec4b6;box-shadow:0 0 0 3px rgba(21,95,75,.055)}
+.stay-edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #e8efec}
+.stay-edit-actions button{min-width:105px}
+@media(max-width:620px){.stay-file-title-row{display:block}.edit-stay-btn{margin:8px 0}.stay-edit-grid{grid-template-columns:1fr}}
