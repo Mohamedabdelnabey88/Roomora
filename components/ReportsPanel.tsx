@@ -167,51 +167,94 @@ export default function ReportsPanel(){
     if(!itemTotals.length){setError("لا توجد بيانات لتصديرها ضمن الفترة المحددة.");return}
     setExporting("xlsx");setError("");
     try{
-      const {Workbook}=await import("exceljs");
-      const wb=new Workbook();
-      wb.creator="Roomora";wb.created=new Date();
-      const summary=wb.addWorksheet("ملخص المستهلكات",{views:[{rightToLeft:true}]});
-      summary.columns=[
-        {header:"الصنف",key:"item",width:28},{header:"إجمالي الكمية",key:"quantity",width:18},
-        {header:"عدد الطلبات",key:"requests",width:16},{header:"عدد الغرف",key:"rooms",width:14}
+      const {zipSync,strToU8}=await import("fflate");
+      const esc=(value:unknown)=>String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&apos;");
+      const colName=(index:number)=>{
+        let n=index+1,name="";
+        while(n>0){const r=(n-1)%26;name=String.fromCharCode(65+r)+name;n=Math.floor((n-1)/26)}
+        return name;
+      };
+      const sheetXml=(rows:Array<Array<string|number>>,widths:number[])=>{
+        const rowXml=rows.map((row,rIdx)=>{
+          const cells=row.map((value,cIdx)=>{
+            const ref=colName(cIdx)+(rIdx+1);
+            const style=rIdx===0?1:rIdx===1?2:rIdx===2?3:0;
+            if(typeof value==="number")return `<c r="${ref}" s="${style}" t="n"><v>${value}</v></c>`;
+            return `<c r="${ref}" s="${style}" t="inlineStr"><is><t>${esc(value)}</t></is></c>`;
+          }).join("");
+          return `<row r="${rIdx+1}">${cells}</row>`;
+        }).join("");
+        const cols=widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join("");
+        return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetViews><sheetView workbookViewId="0" rightToLeft="1"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <cols>${cols}</cols>
+  <sheetData>${rowXml}</sheetData>
+  <autoFilter ref="A3:${colName(widths.length-1)}3"/>
+</worksheet>`;
+      };
+
+      const summaryRows:Array<Array<string|number>>=[
+        ["Roomora - تقرير استهلاك المستهلكات"],
+        [`الفترة: ${from.replace("T"," ")} إلى ${to.replace("T"," ")}`],
+        ["الصنف","إجمالي الكمية","عدد الطلبات","عدد الغرف"],
+        ...itemTotals.map(x=>[x.item,x.quantity,x.requests,x.rooms])
       ];
-      itemTotals.forEach(x=>summary.addRow(x));
-      summary.spliceRows(1,0,["Roomora - تقرير استهلاك المستهلكات"]);
-      summary.spliceRows(2,0,[`الفترة: ${from.replace("T"," ")} إلى ${to.replace("T"," ")}`]);
-      summary.mergeCells("A1:D1");summary.mergeCells("A2:D2");
-      summary.getCell("A1").font={bold:true,size:18,color:{argb:"FFFFFFFF"}};
-      summary.getCell("A1").fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF155F4B"}};
-      summary.getCell("A1").alignment={horizontal:"center"};
-      summary.getCell("A2").font={bold:true,color:{argb:"FF355B4E"}};summary.getCell("A2").alignment={horizontal:"center"};
-      const header=summary.getRow(3);
-      header.font={bold:true,color:{argb:"FFFFFFFF"}};
-      header.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF2E6B58"}};
-      header.alignment={horizontal:"center"};
-      summary.eachRow((row,index)=>{if(index>3){row.height=22;row.eachCell(cell=>{cell.alignment={horizontal:"center",vertical:"middle"};cell.border={bottom:{style:"hair",color:{argb:"FFDDE7E2"}}};});}});
-      summary.autoFilter={from:"A3",to:"D3"};
-      summary.freezePanes={ySplit:3} as never;
-
-      const details=wb.addWorksheet("تفاصيل الطلبات",{views:[{rightToLeft:true}]});
-      details.columns=[
-        {header:"التاريخ والوقت",key:"time",width:24},{header:"الغرفة",key:"room",width:12},
-        {header:"النزيل",key:"guest",width:24},{header:"الصنف",key:"item",width:26},
-        {header:"الكمية",key:"quantity",width:12},{header:"الحالة",key:"status",width:18}
+      const detailsRows:Array<Array<string|number>>=[
+        ["Roomora - تفاصيل استهلاك المستهلكات"],
+        [`الفترة: ${from.replace("T"," ")} إلى ${to.replace("T"," ")}`],
+        ["التاريخ والوقت","الغرفة","النزيل","الصنف","الكمية","الحالة"],
+        ...detailRows.map(x=>[formatDateTime(x.requestedAt),x.room,x.guest,x.item,x.quantity,statusLabels[x.status]||x.status])
       ];
-      detailRows.forEach(x=>details.addRow({time:formatDateTime(x.requestedAt),room:x.room,guest:x.guest,item:x.item,quantity:x.quantity,status:statusLabels[x.status]||x.status}));
-      details.getRow(1).font={bold:true,color:{argb:"FFFFFFFF"}};
-      details.getRow(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF155F4B"}};
-      details.getRow(1).alignment={horizontal:"center"};
-      details.autoFilter={from:"A1",to:"F1"};
-      details.views=[{rightToLeft:true,state:"frozen",ySplit:1}];
+      const timelineRows:Array<Array<string|number>>=[
+        ["Roomora - التجميع الزمني"],
+        [`التجميع: ${groupBy==="hour"?"بالساعة":groupBy==="month"?"بالشهر":"باليوم"}`],
+        ["الفترة","إجمالي الكمية"],
+        ...grouped.map(x=>[x.label,x.quantity])
+      ];
 
-      const timeline=wb.addWorksheet("التجميع الزمني",{views:[{rightToLeft:true}]});
-      timeline.columns=[{header:"الفترة",key:"label",width:25},{header:"إجمالي الكمية",key:"quantity",width:18}];
-      grouped.forEach(x=>timeline.addRow(x));
-      timeline.getRow(1).font={bold:true,color:{argb:"FFFFFFFF"}};
-      timeline.getRow(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFC89A52"}};
+      const files:Record<string,Uint8Array>={};
+      const add=(path:string,text:string)=>{files[path]=strToU8(text)};
 
-      const buffer=await wb.xlsx.writeBuffer();
-      saveBlob(new Blob([new Uint8Array(buffer)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.xlsx`);
+      add("[Content_Types].xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`);
+      add("_rels/.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`);
+      add("xl/workbook.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="ملخص المستهلكات" sheetId="1" r:id="rId1"/><sheet name="تفاصيل الطلبات" sheetId="2" r:id="rId2"/><sheet name="التجميع الزمني" sheetId="3" r:id="rId3"/></sheets>
+</workbook>`);
+      add("xl/_rels/workbook.xml.rels",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>
+<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`);
+      add("xl/styles.xml",`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts>
+<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF155F4B"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2E6B58"/></patternFill></fill></fills>
+<borders count="1"><border/></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs>
+</styleSheet>`);
+      add("xl/worksheets/sheet1.xml",sheetXml(summaryRows,[28,18,16,14]));
+      add("xl/worksheets/sheet2.xml",sheetXml(detailsRows,[24,12,24,26,12,18]));
+      add("xl/worksheets/sheet3.xml",sheetXml(timelineRows,[25,18]));
+
+      const zipped=zipSync(files,{level:6});
+      saveBlob(new Blob([zipped],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),`roomora-consumables-${from.slice(0,10)}-${to.slice(0,10)}.xlsx`);
     }catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء ملف Excel")}
     finally{setExporting(null)}
   }
