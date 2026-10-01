@@ -620,7 +620,6 @@ export default {
     if (url.pathname.match(/^\/api\/stays\/[^/]+$/) && request.method === "PATCH") {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error:"unauthorized" }, { status:401 });
-      if (actor.role !== "admin") return json({ error:"forbidden" }, { status:403 });
 
       const stayId = url.pathname.split("/")[3] || "";
       const current = await env.DB.prepare(`
@@ -715,7 +714,6 @@ export default {
     if (url.pathname.match(/^\/api\/stays\/[^/]+$/) && request.method === "GET") {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error:"unauthorized" }, { status:401 });
-      if (actor.role !== "admin") return json({ error:"forbidden" }, { status:403 });
 
       const stayId = url.pathname.split("/")[3] || "";
       const stay = await env.DB.prepare(`

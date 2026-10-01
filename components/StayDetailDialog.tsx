@@ -48,7 +48,7 @@ export default function StayDetailDialog({stayId,role,onClose,onDeleted}:{stayId
     setError("");
     const response=await fetch("/api/stays/"+encodeURIComponent(stayId),{cache:"no-store"});
     const payload=await response.json().catch(()=>null);
-    if(response.status===403){setError("هذه التفاصيل متاحة للإدارة فقط");return}
+    if(response.status===403){setError("ليست لديك صلاحية لعرض ملف الإقامة");return}
     if(!response.ok||!payload){setError("تعذر تحميل ملف الإقامة");return}
     setData(payload);
     setEditForm({
@@ -67,7 +67,7 @@ export default function StayDetailDialog({stayId,role,onClose,onDeleted}:{stayId
   },[stayId,load]);
 
   async function saveEdit(){
-    if(!stayId||role!=="admin"||saving)return;
+    if(!stayId||!role||saving)return;
     setSaving(true);setError("");
     try{
       const response=await fetch("/api/stays/"+encodeURIComponent(stayId),{
@@ -83,7 +83,7 @@ export default function StayDetailDialog({stayId,role,onClose,onDeleted}:{stayId
       });
       const payload=await response.json().catch(()=>({}));
       const map:Record<string,string>={
-        forbidden:"التعديل متاح لمدير النظام فقط.",
+        forbidden:"ليست لديك صلاحية لتعديل بيانات الإقامة.",
         stay_not_found:"ملف الإقامة لم يعد موجودًا.",
         invalid_guest_name:"اسم النزيل مطلوب.",
         invalid_checkin_time:"وقت الدخول غير صحيح.",
@@ -128,15 +128,15 @@ export default function StayDetailDialog({stayId,role,onClose,onDeleted}:{stayId
   return <ModalFrame open={Boolean(stayId)} onClose={onClose} className="detail-modal stay-detail-modal">
       <button className="close" onClick={onClose}><X size={19}/></button>
       <span className="section-kicker">GUEST STAY FILE</span>
-      <div className="stay-file-title-row"><h2>ملف النزيل والإقامة</h2>{role==="admin"&&data?<button className="edit-stay-btn" onClick={()=>setEditing(v=>!v)}><NotePencil size={15}/>{editing?"إلغاء التعديل":"تصحيح بيانات الحجز"}</button>:null}</div>
+      <div className="stay-file-title-row"><h2>ملف النزيل والإقامة</h2>{role&&data?<button className="edit-stay-btn" onClick={()=>setEditing(v=>!v)}><NotePencil size={15}/>{editing?"إلغاء التعديل":"تصحيح بيانات الحجز"}</button>:null}</div>
       {error?<div className="rooms-state error">{error}</div>:!data?<div className="rooms-state">جاري تحميل الملف…</div>:<>
         <div className="guest-profile-head">
           <div className="avatar large">{data.stay.guest_name.slice(0,1)}</div>
           <div><h3>{data.stay.guest_name}</h3><p><Phone size={13}/> {data.stay.guest_phone||"غير مسجل"}</p></div>
         </div>
 
-        {editing&&role==="admin"?<section className="stay-edit-card">
-          <div className="stay-edit-head"><NotePencil size={18}/><div><b>تصحيح بيانات الحجز</b><span>كل تعديل يُسجل في Audit Log باسم المدير المنفذ.</span></div></div>
+        {editing&&role?<section className="stay-edit-card">
+          <div className="stay-edit-head"><NotePencil size={18}/><div><b>تصحيح بيانات الحجز</b><span>كل تعديل يُسجل في Audit Log باسم الموظف المنفذ.</span></div></div>
           <div className="stay-edit-grid">
             <label><span>اسم النزيل</span><input value={editForm.guestName} onChange={e=>setEditForm({...editForm,guestName:e.target.value})}/></label>
             <label><span>رقم الجوال</span><input value={editForm.guestPhone} onChange={e=>setEditForm({...editForm,guestPhone:e.target.value})}/></label>
