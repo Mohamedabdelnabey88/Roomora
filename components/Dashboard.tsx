@@ -151,16 +151,21 @@ export default function Dashboard() {
     });
   }
 
-  const checkoutAlerts=rooms.flatMap(room=>{
-    if(!room.stayId||!room.expectedCheckoutAt)return [];
+  type CheckoutAlert={key:string;title:string;body:string;tone:"warning"|"critical";overdue:boolean};
+  const checkoutAlerts:CheckoutAlert[]=rooms.reduce<CheckoutAlert[]>((alerts,room)=>{
+    if(!room.stayId||!room.expectedCheckoutAt)return alerts;
     const expected=new Date(room.expectedCheckoutAt).getTime();
-    if(!Number.isFinite(expected))return [];
+    if(!Number.isFinite(expected))return alerts;
     const diffMinutes=Math.ceil((expected-clockNow)/60000);
-    if(diffMinutes>15)return [];
-    if(diffMinutes>0)return [{key:"pre-"+room.stayId,title:"موعد خروج قريب",body:"الغرفة "+room.number+" · "+(room.guest||"نزيل")+" · متبقي "+diffMinutes+" دقيقة",tone:"warning" as const,overdue:false}];
+    if(diffMinutes>15)return alerts;
+    if(diffMinutes>0){
+      alerts.push({key:"pre-"+room.stayId,title:"موعد خروج قريب",body:"الغرفة "+room.number+" · "+(room.guest||"نزيل")+" · متبقي "+diffMinutes+" دقيقة",tone:"warning",overdue:false});
+      return alerts;
+    }
     const late=Math.max(0,Math.floor((clockNow-expected)/60000));
-    return [{key:"late-"+room.stayId,title:"تجاوز وقت الخروج",body:"الغرفة "+room.number+" · "+(room.guest||"نزيل")+" · تأخير "+late+" دقيقة — سجّل خروج أو مدد الإقامة",tone:"critical" as const,overdue:true}];
-  });
+    alerts.push({key:"late-"+room.stayId,title:"تجاوز وقت الخروج",body:"الغرفة "+room.number+" · "+(room.guest||"نزيل")+" · تأخير "+late+" دقيقة — سجّل خروج أو مدد الإقامة",tone:"critical",overdue:true});
+    return alerts;
+  },[]);
 
   useEffect(()=>{
     if(!audioReady)return;
