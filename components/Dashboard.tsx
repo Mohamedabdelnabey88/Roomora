@@ -61,7 +61,7 @@ export default function Dashboard() {
           setSelected(prev => prev ? (mapped.find(room => room.id === prev.id) || null) : null);
           setLastSync(new Date());
         }
-        if (dataError) setDataError(null);
+        setDataError(prev => prev ? null : prev);
       })
       .catch(() => {
         if(!silent) setDataError("تعذر الاتصال بقاعدة بيانات الفندق");
