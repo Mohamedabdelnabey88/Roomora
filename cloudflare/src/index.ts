@@ -243,6 +243,221 @@ export default {
       return json({ ok: true });
     }
 
+
+    if (url.pathname === "/api/reservations/availability" && request.method === "GET") {
+      const actor = await requireSession(request, env);
+      if (!actor) return json({ error:"unauthorized" }, { status:401 });
+
+      const fromRaw=url.searchParams.get("from") || "";
+      const toRaw=url.searchParams.get("to") || "";
+      const from=new Date(fromRaw),to=new Date(toRaw);
+      if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>=to){
+        return json({error:"invalid_reservation_range"},{status:400});
+      }
+
+      const rooms=await env.DB.prepare(`
+        SELECT id,number,floor,room_type,operational_status
+        FROM rooms
+        ORDER BY floor, CASE WHEN number GLOB '[0-9]*' THEN CAST(number AS INTEGER) ELSE 0 END, number
+      `).all<{
+        id:string;number:string;floor:number;room_type:string;operational_status:string
+      }>();
+
+      const result=[];
+      for(const room of rooms.results){
+        let available=room.operational_status!=="out_of_service";
+        let reason=available?"":"الغرفة خارج الخدمة";
+
+        if(available){
+          const stayConflict=await env.DB.prepare(`
+            SELECT id,guest_name,expected_checkout_at
+            FROM stays
+            WHERE room_id=?1 AND status='in_house'
+              AND datetime(expected_checkout_at) > datetime(?2)
+            LIMIT 1
+          `).bind(room.id,from.toISOString()).first<{id:string;guest_name:string;expected_checkout_at:string}>();
+          if(stayConflict){
+            available=false;
+            reason="إقامة حالية حتى "+stayConflict.expected_checkout_at;
+          }
+        }
+
+        if(available){
+          const reservationConflict=await env.DB.prepare(`
+            SELECT id,guest_name,checkin_at,checkout_at
+            FROM reservations
+            WHERE room_id=?1 AND status='booked'
+              AND datetime(checkin_at) < datetime(?3)
+              AND datetime(checkout_at) > datetime(?2)
+            ORDER BY checkin_at
+            LIMIT 1
+          `).bind(room.id,from.toISOString(),to.toISOString()).first<{id:string;guest_name:string;checkin_at:string;checkout_at:string}>();
+          if(reservationConflict){
+            available=false;
+            reason="حجز متداخل";
+          }
+        }
+
+        result.push({...room,available,reason});
+      }
+      return json(result);
+    }
+
+    if (url.pathname === "/api/reservations" && request.method === "GET") {
+      const actor=await requireSession(request,env);
+      if(!actor)return json({error:"unauthorized"},{status:401});
+      const result=await env.DB.prepare(`
+        SELECT rv.id,rv.room_id,rv.guest_name,rv.guest_phone,rv.checkin_at,rv.checkout_at,
+               rv.status,rv.note,rv.stay_id,rv.created_at,
+               r.number AS room_number,r.floor,r.room_type,
+               u.name AS created_by_name
+        FROM reservations rv
+        JOIN rooms r ON r.id=rv.room_id
+        LEFT JOIN users u ON u.id=rv.created_by
+        ORDER BY
+          CASE WHEN rv.status='booked' THEN 0 ELSE 1 END,
+          rv.checkin_at ASC
+        LIMIT 1000
+      `).all();
+      return json(result.results);
+    }
+
+    if (url.pathname === "/api/reservations" && request.method === "POST") {
+      const actor=await requireSession(request,env);
+      if(!actor)return json({error:"unauthorized"},{status:401});
+      const body=await readJson<{
+        roomId?:string;guestName?:string;guestPhone?:string;
+        checkinAt?:string;checkoutAt?:string;note?:string;
+      }>(request);
+      const roomId=body?.roomId?.trim()||"";
+      const guestName=body?.guestName?.trim()||"";
+      const guestPhone=body?.guestPhone?.trim()||null;
+      const checkin=new Date(body?.checkinAt||"");
+      const checkout=new Date(body?.checkoutAt||"");
+      if(!roomId||!guestName||!Number.isFinite(checkin.getTime())||!Number.isFinite(checkout.getTime())||checkin>=checkout){
+        return json({error:"invalid_reservation_payload"},{status:400});
+      }
+      if(checkin.getTime()<Date.now()-5*60*1000){
+        return json({error:"reservation_must_be_future"},{status:400});
+      }
+
+      const room=await env.DB.prepare(`
+        SELECT id,number,operational_status FROM rooms WHERE id=?1 LIMIT 1
+      `).bind(roomId).first<{id:string;number:string;operational_status:string}>();
+      if(!room)return json({error:"room_not_found"},{status:404});
+      if(room.operational_status==="out_of_service")return json({error:"room_out_of_service"},{status:409});
+
+      const stayConflict=await env.DB.prepare(`
+        SELECT id,expected_checkout_at FROM stays
+        WHERE room_id=?1 AND status='in_house'
+          AND datetime(expected_checkout_at) > datetime(?2)
+        LIMIT 1
+      `).bind(roomId,checkin.toISOString()).first();
+      if(stayConflict)return json({error:"reservation_conflict_active_stay"},{status:409});
+
+      const reservationConflict=await env.DB.prepare(`
+        SELECT id,guest_name,checkin_at,checkout_at
+        FROM reservations
+        WHERE room_id=?1 AND status='booked'
+          AND datetime(checkin_at) < datetime(?3)
+          AND datetime(checkout_at) > datetime(?2)
+        LIMIT 1
+      `).bind(roomId,checkin.toISOString(),checkout.toISOString()).first();
+      if(reservationConflict)return json({error:"reservation_conflict",conflict:reservationConflict},{status:409});
+
+      const id=crypto.randomUUID();
+      await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO reservations(
+            id,room_id,guest_name,guest_phone,checkin_at,checkout_at,status,note,created_by
+          ) VALUES(?1,?2,?3,?4,?5,?6,'booked',?7,?8)
+        `).bind(id,roomId,guestName,guestPhone,checkin.toISOString(),checkout.toISOString(),body?.note?.trim()||null,actor.id),
+        env.DB.prepare(`
+          INSERT INTO audit_logs(actor_user_id,action,entity_type,entity_id,metadata_json)
+          VALUES(?1,'reservation_created','reservation',?2,?3)
+        `).bind(actor.id,id,JSON.stringify({roomId,roomNumber:room.number,checkinAt:checkin.toISOString(),checkoutAt:checkout.toISOString()}))
+      ]);
+      return json({id,status:"booked"},{status:201});
+    }
+
+    if (url.pathname.match(/^\/api\/reservations\/[^/]+\/cancel$/) && request.method === "POST") {
+      const actor=await requireSession(request,env);
+      if(!actor)return json({error:"unauthorized"},{status:401});
+      const reservationId=url.pathname.split("/")[3]||"";
+      const current=await env.DB.prepare(`
+        SELECT id,status FROM reservations WHERE id=?1 LIMIT 1
+      `).bind(reservationId).first<{id:string;status:string}>();
+      if(!current)return json({error:"reservation_not_found"},{status:404});
+      if(current.status!=="booked")return json({error:"reservation_not_cancellable"},{status:409});
+      await env.DB.batch([
+        env.DB.prepare("UPDATE reservations SET status='cancelled',updated_at=CURRENT_TIMESTAMP WHERE id=?1").bind(reservationId),
+        env.DB.prepare(`
+          INSERT INTO audit_logs(actor_user_id,action,entity_type,entity_id)
+          VALUES(?1,'reservation_cancelled','reservation',?2)
+        `).bind(actor.id,reservationId)
+      ]);
+      return json({ok:true});
+    }
+
+    if (url.pathname.match(/^\/api\/reservations\/[^/]+\/checkin$/) && request.method === "POST") {
+      const actor=await requireSession(request,env);
+      if(!actor)return json({error:"unauthorized"},{status:401});
+      const reservationId=url.pathname.split("/")[3]||"";
+      const reservation=await env.DB.prepare(`
+        SELECT rv.id,rv.room_id,rv.guest_name,rv.guest_phone,rv.checkin_at,rv.checkout_at,rv.status,
+               r.number AS room_number,r.operational_status
+        FROM reservations rv
+        JOIN rooms r ON r.id=rv.room_id
+        WHERE rv.id=?1 LIMIT 1
+      `).bind(reservationId).first<{
+        id:string;room_id:string;guest_name:string;guest_phone:string|null;checkin_at:string;checkout_at:string;
+        status:string;room_number:string;operational_status:string
+      }>();
+      if(!reservation)return json({error:"reservation_not_found"},{status:404});
+      if(reservation.status!=="booked")return json({error:"reservation_not_checkin_ready"},{status:409});
+
+      const now=Date.now();
+      const plannedIn=new Date(reservation.checkin_at).getTime();
+      const plannedOut=new Date(reservation.checkout_at).getTime();
+      if(now<plannedIn-2*60*60*1000)return json({error:"checkin_too_early",allowedAt:new Date(plannedIn-2*60*60*1000).toISOString()},{status:409});
+      if(now>=plannedOut)return json({error:"reservation_expired"},{status:409});
+      if(reservation.operational_status!=="available")return json({error:"room_not_available"},{status:409});
+
+      const activeStay=await env.DB.prepare(`
+        SELECT id FROM stays WHERE room_id=?1 AND status='in_house' LIMIT 1
+      `).bind(reservation.room_id).first();
+      if(activeStay)return json({error:"active_stay_exists"},{status:409});
+
+      const stayId=crypto.randomUUID();
+      const checkinAt=new Date().toISOString();
+      const write=await env.DB.batch([
+        env.DB.prepare(`
+          INSERT INTO stays(id,room_id,guest_name,guest_phone,checkin_at,expected_checkout_at,status,created_by)
+          SELECT ?1,?2,?3,?4,?5,?6,'in_house',?7
+          WHERE NOT EXISTS(SELECT 1 FROM stays WHERE room_id=?2 AND status='in_house')
+        `).bind(stayId,reservation.room_id,reservation.guest_name,reservation.guest_phone,checkinAt,reservation.checkout_at,actor.id),
+        env.DB.prepare(`
+          UPDATE rooms SET operational_status='occupied',updated_at=CURRENT_TIMESTAMP
+          WHERE id=?1 AND operational_status='available'
+        `).bind(reservation.room_id)
+      ]);
+      if(!write[0]?.meta?.changes||!write[1]?.meta?.changes){
+        if(write[0]?.meta?.changes)await env.DB.prepare("DELETE FROM stays WHERE id=?1").bind(stayId).run();
+        return json({error:"room_not_available"},{status:409});
+      }
+
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE reservations SET status='checked_in',stay_id=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2
+        `).bind(stayId,reservationId),
+        env.DB.prepare(`
+          INSERT INTO audit_logs(actor_user_id,action,entity_type,entity_id,metadata_json)
+          VALUES(?1,'reservation_checkin','reservation',?2,?3)
+        `).bind(actor.id,reservationId,JSON.stringify({stayId,roomNumber:reservation.room_number,checkinAt}))
+      ]);
+      return json({ok:true,stayId,checkinAt});
+    }
+
     if (url.pathname === "/api/stays" && request.method === "POST") {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error: "unauthorized" }, { status: 401 });

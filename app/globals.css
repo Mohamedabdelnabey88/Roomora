@@ -1613,3 +1613,30 @@ input,select,textarea{max-width:100%}
   .employee-edit-actions{display:grid;grid-template-columns:1fr 1fr}
   .employee-edit-actions button{min-width:0}
 }
+
+
+/* Reservations */
+.reservation-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.reservation-kpis>div{display:grid;grid-template-columns:36px 1fr auto;gap:9px;align-items:center;padding:13px 14px;background:#fff;border:1px solid #e0e8e4;border-radius:14px}
+.reservation-kpis svg{color:#356a58}.reservation-kpis span{font-size:8px;color:#75837e}.reservation-kpis b{font-size:18px;color:#24483b}.reservation-kpis .ready svg,.reservation-kpis .ready b{color:#25765a}.reservation-kpis .late svg,.reservation-kpis .late b{color:#b64c48}
+.reservations-directory{padding:16px}.reservation-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+.reservation-card{border:1px solid #e2e9e6;border-radius:15px;padding:14px;background:#fff;box-shadow:0 7px 22px rgba(27,49,41,.035)}
+.reservation-card.ready{border-color:#cfe4db;background:#fbfefc}.reservation-card.late{border-color:#ebc8c5;background:#fffafa}.reservation-card.cancelled{opacity:.65}
+.reservation-card header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}.reservation-card header span,.reservation-card header small{display:block;color:#7f8c87;font-size:7px}.reservation-card header b{display:block;font-size:19px;margin:1px 0}.reservation-card header i{font-style:normal;font-size:7px;font-weight:900;padding:6px 8px;border-radius:8px;background:#edf4f1;color:#356a58}.reservation-card.late header i{background:#ffebe9;color:#b44d48}
+.reservation-guest{display:flex;gap:8px;align-items:center;margin:13px 0;padding:9px 10px;background:#f7faf8;border-radius:11px}.reservation-guest b{display:block;font-size:10px}.reservation-guest span{display:flex;align-items:center;gap:4px;font-size:7px;color:#788680;margin-top:2px}
+.reservation-dates{display:grid;grid-template-columns:1fr 1fr;gap:7px}.reservation-dates>div{border:1px solid #e7ece9;border-radius:10px;padding:9px}.reservation-dates span{display:block;font-size:7px;color:#84918c}.reservation-dates b{display:block;font-size:8px;margin-top:3px}
+.reservation-note{font-size:8px;color:#728079;line-height:1.6;margin:10px 0}.reservation-card footer{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px}.reservation-card footer button{width:100%;min-height:40px}
+.reservation-create-modal{width:min(820px,calc(100% - 28px));max-height:90vh;overflow:auto}.reservation-create-modal h2{font-size:23px;margin:6px 0 4px}.reservation-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.reservation-availability-head{display:flex;justify-content:space-between;align-items:center;margin:17px 0 9px}.reservation-availability-head>div{display:flex;align-items:center;gap:7px}.reservation-availability-head b{font-size:10px}.reservation-availability-head span{font-size:8px;color:#76857f}
+.reservation-room-picker{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;max-height:260px;overflow:auto;padding:2px}
+.reservation-room-picker button{border:1px solid #e0e7e4;border-radius:11px;background:#fff;padding:9px;text-align:right;font:inherit;cursor:pointer}.reservation-room-picker button.selected{border-color:#5b9b83;box-shadow:0 0 0 3px rgba(31,107,86,.08);background:#f4faf7}.reservation-room-picker button.blocked{opacity:.5;cursor:not-allowed;background:#f6f7f7}.reservation-room-picker b{display:block;font-size:11px}.reservation-room-picker span{display:block;font-size:7px;color:#7b8883;margin-top:2px}.reservation-room-picker small{display:block;font-size:7px;color:#798781;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:1050px){.reservation-grid{grid-template-columns:1fr 1fr}.reservation-room-picker{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:620px){
+  .reservation-kpis{grid-template-columns:1fr 1fr}
+  .reservation-grid{grid-template-columns:1fr}
+  .reservation-form-grid{grid-template-columns:1fr}
+  .reservation-room-picker{grid-template-columns:1fr 1fr;max-height:42dvh}
+  .reservation-create-modal{width:100%!important}
+  .reservation-card footer{grid-template-columns:1fr}
+}
+@media(max-width:380px){.reservation-kpis{grid-template-columns:1fr}.reservation-room-picker{grid-template-columns:1fr}}

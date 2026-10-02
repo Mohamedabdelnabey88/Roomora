@@ -4,7 +4,7 @@ import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Bed,Bell,ChartBar,Gear,HouseLine,ListChecks,MoonStars,Package,
+  Bed,Bell,CalendarBlank,ChartBar,Gear,HouseLine,ListChecks,MoonStars,Package,
   ShieldCheck,SignOut,Sparkle,Users
 } from "@phosphor-icons/react";
 
@@ -13,6 +13,7 @@ type UserInfo={name:string;role:"admin"|"reception"};
 const items=[
   {href:"/",label:"لوحة التشغيل",icon:HouseLine},
   {href:"/rooms",label:"الغرف والإقامات",icon:Bed},
+  {href:"/reservations",label:"الحجوزات",icon:CalendarBlank},
   {href:"/requests",label:"طلبات الغرف",icon:ListChecks},
   {href:"/notifications",label:"مركز الإشعارات",icon:Bell},
   {href:"/guests",label:"النزلاء",icon:Users},
