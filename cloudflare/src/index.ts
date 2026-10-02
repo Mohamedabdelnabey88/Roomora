@@ -1229,20 +1229,61 @@ export default {
       if (actor.role !== "admin") return json({ error: "forbidden" }, { status: 403 });
 
       const userId = url.pathname.split("/").pop() || "";
-      const body = await readJson<{ active?: boolean }>(request);
-      if (!userId || typeof body?.active !== "boolean") return json({ error: "invalid_payload" }, { status: 400 });
-      if (userId === actor.id && body.active === false) return json({ error: "cannot_disable_self" }, { status: 409 });
+      const body = await readJson<{
+        name?:string;
+        username?:string;
+        password?:string;
+        role?:"admin"|"reception";
+        active?:boolean;
+      }>(request);
+      if (!userId) return json({ error:"invalid_user_payload" }, { status:400 });
 
-      const updated = await env.DB.prepare("UPDATE users SET active = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2")
-        .bind(body.active ? 1 : 0, userId).run();
-      if (!updated.meta.changes) return json({ error: "user_not_found" }, { status: 404 });
+      const current = await env.DB.prepare(`
+        SELECT id,name,username,role,active FROM users WHERE id=?1 LIMIT 1
+      `).bind(userId).first<{id:string;name:string;username:string;role:"admin"|"reception";active:number}>();
+      if(!current) return json({ error:"user_not_found" }, { status:404 });
+
+      const name = body?.name === undefined ? current.name : body.name.trim();
+      const username = body?.username === undefined ? current.username : body.username.trim().toLowerCase();
+      const role = body?.role === undefined ? current.role : (body.role === "admin" ? "admin" : "reception");
+      const active = typeof body?.active === "boolean" ? body.active : Boolean(current.active);
+      const password = body?.password || "";
+
+      if(!name || !username || (password && password.length < 10)){
+        return json({ error:"invalid_user_payload" }, { status:400 });
+      }
+      if(userId===actor.id && !active) return json({ error:"cannot_disable_self" }, { status:409 });
+      if(userId===actor.id && role!=="admin") return json({ error:"cannot_demote_self" }, { status:409 });
+
+      if(username!==current.username){
+        const existing=await env.DB.prepare("SELECT id FROM users WHERE username=?1 AND id<>?2 LIMIT 1").bind(username,userId).first();
+        if(existing) return json({ error:"username_exists" }, { status:409 });
+      }
+
+      const passwordHash=password ? await hashPassword(password) : null;
+      const updated=await env.DB.prepare(`
+        UPDATE users
+        SET name=?1,
+            username=?2,
+            role=?3,
+            active=?4,
+            password_hash=CASE WHEN ?5 IS NULL THEN password_hash ELSE ?5 END,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE id=?6
+      `).bind(name,username,role,active?1:0,passwordHash,userId).run();
+
+      if(!updated.meta.changes) return json({ error:"user_not_found" }, { status:404 });
 
       await env.DB.prepare(`
         INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, metadata_json)
-        VALUES (?1, 'user_status_changed', 'user', ?2, ?3)
-      `).bind(actor.id, userId, JSON.stringify({ active: body.active })).run();
+        VALUES (?1,'user_updated','user',?2,?3)
+      `).bind(actor.id,userId,JSON.stringify({
+        before:{name:current.name,username:current.username,role:current.role,active:Boolean(current.active)},
+        after:{name,username,role,active},
+        passwordChanged:Boolean(password)
+      })).run();
 
-      return json({ ok: true });
+      return json({ok:true,user:{id:userId,name,username,role,active:active?1:0}});
     }
 
     if (url.pathname === "/api/bootstrap" && request.method === "GET") {

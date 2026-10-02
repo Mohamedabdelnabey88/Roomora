@@ -1594,3 +1594,22 @@ input,select,textarea{max-width:100%}
   .mobile-dock a{font-size:8px}
   .mobile-dock svg{width:18px;height:18px}
 }
+
+
+/* Employee administration */
+.employee-edit-btn{min-height:34px;padding:0 10px;border:1px solid #d9e5e0;border-radius:9px;background:#f7fbf9;color:#2d6552;font:inherit;font-size:8px;font-weight:800;display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.employee-edit-btn:hover{background:#edf6f2}
+.employee-edit-modal{width:min(520px,calc(100% - 28px))}
+.employee-edit-modal h2{font-size:23px;margin:6px 0 4px}
+.employee-active-toggle{display:flex;align-items:center;gap:10px;margin:13px 0;padding:11px 12px;border:1px solid #dfe7e3;border-radius:12px;background:#fafcfa;cursor:pointer}
+.employee-active-toggle input{width:18px;height:18px;accent-color:#155f4b}
+.employee-active-toggle span{display:block}.employee-active-toggle b{display:block;font-size:9px}.employee-active-toggle small{display:block;margin-top:2px;color:#7e8b86;font-size:7px}
+.employee-edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid #e8eeeb}
+.employee-edit-actions button{min-width:110px}
+@media(max-width:620px){
+  .pro-employee-row{grid-template-columns:38px minmax(0,1fr)!important}
+  .pro-employee-row .role-chip,.pro-employee-row .employee-edit-btn,.pro-employee-row .status-btn{grid-column:2;width:100%;justify-content:center}
+  .employee-edit-modal{width:100%!important}
+  .employee-edit-actions{display:grid;grid-template-columns:1fr 1fr}
+  .employee-edit-actions button{min-width:0}
+}
