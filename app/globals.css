@@ -1659,3 +1659,20 @@ input,select,textarea{max-width:100%}
   .reservation-calendar-periods{width:100%}
   .reservation-period{min-width:235px}
 }
+
+
+/* Dashboard future reservation marker */
+.future-reservation-badge{
+  display:flex;align-items:center;gap:7px;margin:7px 0 2px;padding:7px 8px;
+  border:1px solid #ead9b8;border-radius:10px;background:linear-gradient(135deg,#fffaf0,#fff);
+  color:#8b672e;box-shadow:0 4px 12px rgba(132,94,35,.05)
+}
+.future-reservation-badge>svg{flex:0 0 auto;color:#ad7f35}
+.future-reservation-badge b{display:block;font-size:8px;line-height:1.2}
+.future-reservation-badge span{display:block;margin-top:2px;font-size:7px;color:#917b59;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room-card:has(.future-reservation-badge){border-top-color:#e6d1aa}
+@media(max-width:620px){
+  .future-reservation-badge{padding:7px;gap:6px}
+  .future-reservation-badge b{font-size:8px}
+  .future-reservation-badge span{font-size:7px}
+}

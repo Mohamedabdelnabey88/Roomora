@@ -26,6 +26,10 @@ const labels = {
 } as const;
 
 type CheckoutAlert={key:string;title:string;body:string;tone:"warning"|"critical";overdue:boolean};
+type DashboardReservation={
+  id:string;room_id:string;guest_name:string;checkin_at:string;checkout_at:string;
+  status:"booked"|"checked_in"|"cancelled";
+};
 
 export default function Dashboard() {
   const router=useRouter();
@@ -41,6 +45,7 @@ export default function Dashboard() {
   const [extendRoom, setExtendRoom] = useState<Room | null>(null);
   const [requestRoom, setRequestRoom] = useState<Room | null>(null);
   const [activeRequests, setActiveRequests] = useState<ActiveRequest[]>([]);
+  const [futureReservations,setFutureReservations]=useState<DashboardReservation[]>([]);
   const [currentUser, setCurrentUser] = useState<{name:string;role:"admin"|"reception"}|null>(null);
   const [actionError, setActionError] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all"|Room["status"]>("all");
@@ -50,6 +55,7 @@ export default function Dashboard() {
   const [checkoutPopup,setCheckoutPopup]=useState<CheckoutAlert|null>(null);
   const roomsSnapshotRef = useRef("");
   const requestsSnapshotRef = useRef("");
+  const reservationsSnapshotRef=useRef("");
   const checkoutSoundRef=useRef<Record<string,number>>({});
   const audioContextRef=useRef<AudioContext|null>(null);
 
@@ -92,6 +98,19 @@ export default function Dashboard() {
     }
   }
 
+  async function loadReservations() {
+    const response=await fetch("/api/reservations",{cache:"no-store"});
+    if(response.status===401){window.location.href="/login";return}
+    if(!response.ok)return;
+    const payload=await response.json().catch(()=>[]);
+    const next=(Array.isArray(payload)?payload:[]).filter((r:DashboardReservation)=>r.status==="booked");
+    const snapshot=JSON.stringify(next);
+    if(reservationsSnapshotRef.current!==snapshot){
+      reservationsSnapshotRef.current=snapshot;
+      setFutureReservations(next);
+    }
+  }
+
   async function loadCurrentUser() {
     const response = await fetch("/api/auth/me",{cache:"no-store"});
     if (response.status === 401) { window.location.href="/login"; return; }
@@ -100,11 +119,11 @@ export default function Dashboard() {
   }
 
   async function refreshOperations() {
-    await Promise.all([loadRooms(true),loadRequests()]);
+    await Promise.all([loadRooms(true),loadRequests(),loadReservations()]);
   }
 
   useEffect(() => {
-    void Promise.all([loadRooms(false),loadRequests(),loadCurrentUser()]);
+    void Promise.all([loadRooms(false),loadRequests(),loadReservations(),loadCurrentUser()]);
     const refresh = () => { void refreshOperations(); };
     const timer = window.setInterval(refresh, 30000);
     const onVisibilityChange = () => {
@@ -266,6 +285,31 @@ export default function Dashboard() {
     await refreshOperations();
   }
 
+  const upcomingByRoom=useMemo(()=>{
+    const now=Date.now();
+    const map=new Map<string,DashboardReservation[]>();
+    for(const reservation of futureReservations){
+      const checkinAt=new Date(reservation.checkin_at).getTime();
+      if(!Number.isFinite(checkinAt)||checkinAt<=now)continue;
+      const list=map.get(reservation.room_id)||[];
+      list.push(reservation);map.set(reservation.room_id,list);
+    }
+    for(const list of map.values())list.sort((a,b)=>new Date(a.checkin_at).getTime()-new Date(b.checkin_at).getTime());
+    return map;
+  },[futureReservations,clockNow]);
+
+  function futureReservationLabel(count:number){
+    if(count===1)return "حجز قادم";
+    if(count===2)return "حجزان قادمان";
+    return count+" حجوزات قادمة";
+  }
+
+  function nextReservationDate(value:string){
+    return new Intl.DateTimeFormat("ar-SA",{
+      timeZone:"Asia/Riyadh",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"
+    }).format(new Date(value));
+  }
+
   const filtered = useMemo(
     () => rooms.filter(r =>
       (activeFloor === "all" || r.floor === activeFloor) &&
@@ -396,6 +440,10 @@ export default function Dashboard() {
               </div>
 
               <div className="room-type-row"><Bed size={15}/><span>{room.type}</span></div>
+              {upcomingByRoom.get(room.id)?.length?<div className="future-reservation-badge" title={"أقرب حجز: "+nextReservationDate(upcomingByRoom.get(room.id)![0].checkin_at)}>
+                <CalendarCheck size={14} weight="fill"/>
+                <div><b>{futureReservationLabel(upcomingByRoom.get(room.id)!.length)}</b><span>أقرب دخول {nextReservationDate(upcomingByRoom.get(room.id)![0].checkin_at)}</span></div>
+              </div>:null}
 
               {room.guest ? (
                 <div className="room-occupancy guest">
