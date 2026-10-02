@@ -1394,6 +1394,11 @@ export default {
           s.checkin_at,
           s.expected_checkout_at,
           s.actual_checkout_at,
+          (
+            SELECT GROUP_CONCAT(se.previous_checkout_at, '|')
+            FROM stay_extensions se
+            WHERE se.stay_id = s.id
+          ) AS extension_previous_checkouts,
           r.number AS room_number,
           r.room_type,
           COUNT(sr.id) AS total_requests,

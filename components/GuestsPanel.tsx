@@ -9,6 +9,7 @@ type StayRow={
   id:string; guest_name:string; guest_phone?:string|null; status:string;
   checkin_at:string; expected_checkout_at:string; actual_checkout_at?:string|null;
   room_number:string; room_type:string; total_requests:number; open_requests:number;
+  extension_previous_checkouts?:string|null;
 };
 
 export default function GuestsPanel(){
@@ -80,10 +81,25 @@ export default function GuestsPanel(){
     return read("year")+"-"+read("month")+"-"+read("day");
   }
 
+  function wasScheduledForDate(row:StayRow,dateKey:string){
+    if(row.expected_checkout_at&&riyadhDateKey(row.expected_checkout_at)===dateKey)return true;
+    return String(row.extension_previous_checkouts||"")
+      .split("|")
+      .filter(Boolean)
+      .some(value=>riyadhDateKey(value)===dateKey);
+  }
+
+  function wasExtendedFromDate(row:StayRow,dateKey:string){
+    return String(row.extension_previous_checkouts||"")
+      .split("|")
+      .filter(Boolean)
+      .some(value=>riyadhDateKey(value)===dateKey);
+  }
+
   function todayCheckoutRows(){
     const today=riyadhDateKey(new Date());
     return rows
-      .filter(x=>x.status!=="cancelled"&&Boolean(x.expected_checkout_at)&&riyadhDateKey(x.expected_checkout_at)===today)
+      .filter(x=>x.status!=="cancelled"&&wasScheduledForDate(x,today))
       .sort((a,b)=>String(a.room_number).localeCompare(String(b.room_number),undefined,{numeric:true}));
   }
 
@@ -134,16 +150,19 @@ export default function GuestsPanel(){
       for(let pageIndex=0;pageIndex<pages.length;pageIndex++){
         const pageRows=pages[pageIndex];
         const startIndex=pageIndex*15;
-        const body=pageRows.map((row,index)=>`
+        const body=pageRows.map((row,index)=>{
+          const checkedOut=row.status==="checked_out"&&Boolean(row.actual_checkout_at);
+          const extended=wasExtendedFromDate(row,todayKey);
+          return `
           <tr>
             <td class="idx">${startIndex+index+1}</td>
             <td class="room">${esc(row.room_number)}</td>
             <td class="guest">${esc(row.guest_name)}</td>
             <td class="phone">${esc(row.guest_phone||"غير مسجل")}</td>
-            <td class="decision"><span class="check-box"></span></td>
-            <td class="decision"><span class="check-box"></span></td>
+            <td class="decision"><span class="check-box ${checkedOut?"checked":""}">${checkedOut?"✓":""}</span></td>
+            <td class="decision"><span class="check-box ${extended?"checked":""}">${extended?"✓":""}</span></td>
           </tr>
-        `).join("");
+        `}).join("");
 
         const host=document.createElement("div");
         hosts.push(host);
@@ -172,7 +191,7 @@ export default function GuestsPanel(){
             th:nth-child(5),td:nth-child(5){width:16%}
             th:nth-child(6),td:nth-child(6){width:16%}
             .idx,.room,.phone,.decision{text-align:center}.room{font-weight:800;font-size:12px}.guest{font-weight:700}
-            .decision{background:#fff!important}.check-box{display:inline-block;width:18px;height:18px;border:2px solid #7f8f88;border-radius:4px;background:#fff}
+            .decision{background:#fff!important}.check-box{display:inline-grid;place-items:center;width:18px;height:18px;border:2px solid #7f8f88;border-radius:4px;background:#fff;font-size:14px;font-weight:900;line-height:1;color:#155f4b}.check-box.checked{border-color:#155f4b;background:#eef7f3}
             .foot{display:flex;justify-content:space-between;margin-top:auto;padding-top:7px;border-top:1px solid #e1e8e5;color:#89958f;font-size:8px}
           </style>
           <div class="sheet">
