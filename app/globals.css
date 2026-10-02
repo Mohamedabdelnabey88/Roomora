@@ -1640,3 +1640,22 @@ input,select,textarea{max-width:100%}
   .reservation-card footer{grid-template-columns:1fr}
 }
 @media(max-width:380px){.reservation-kpis{grid-template-columns:1fr}.reservation-room-picker{grid-template-columns:1fr}}
+
+
+/* Reservation occupancy calendar */
+.reservation-calendar-panel{padding:16px;margin-bottom:16px}
+.reservation-calendar-panel .panel-head p{margin:4px 0 0;font-size:9px;color:#788680}
+.reservation-calendar-list{display:grid;gap:8px;margin-top:14px;max-height:520px;overflow:auto;padding:2px}
+.reservation-calendar-room{display:grid;grid-template-columns:125px minmax(0,1fr);gap:10px;align-items:start;padding:10px;border:1px solid #e3eae7;border-radius:12px;background:#fbfcfc}
+.reservation-calendar-room-head b{display:block;font-size:10px}.reservation-calendar-room-head span{display:block;margin-top:3px;font-size:7px;color:#82908a}
+.reservation-calendar-periods{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px}
+.reservation-period{min-width:205px;border-radius:10px;padding:8px 9px;border:1px solid #e0e7e4;background:#fff}
+.reservation-period span{display:block;font-size:7px;color:#7d8a85}.reservation-period b{display:block;font-size:9px;margin:2px 0}.reservation-period small{display:block;font-size:7px;color:#718079;white-space:nowrap}
+.reservation-period.active-stay{background:#f1f7fb;border-color:#d8e5ef}.reservation-period.active-stay span{color:#47769a}
+.reservation-period.future{background:#f5faf7;border-color:#d8e8e0}.reservation-period.future span{color:#357158}
+.reservation-period.free{display:flex;align-items:center;gap:6px;min-width:210px;color:#48816c;background:#f8fbfa}
+@media(max-width:620px){
+  .reservation-calendar-room{grid-template-columns:1fr}
+  .reservation-calendar-periods{width:100%}
+  .reservation-period{min-width:235px}
+}

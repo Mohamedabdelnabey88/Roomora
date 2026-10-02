@@ -267,6 +267,45 @@ export default {
     }
 
 
+    if (url.pathname === "/api/reservations/calendar" && request.method === "GET") {
+      await ensureReservationsSchema(env);
+      const actor=await requireSession(request,env);
+      if(!actor)return json({error:"unauthorized"},{status:401});
+
+      const rooms=await env.DB.prepare(`
+        SELECT id,number,floor,room_type,operational_status
+        FROM rooms
+        ORDER BY floor, CASE WHEN number GLOB '[0-9]*' THEN CAST(number AS INTEGER) ELSE 0 END, number
+      `).all<{
+        id:string;number:string;floor:number;room_type:string;operational_status:string
+      }>();
+
+      const result=[];
+      for(const room of rooms.results){
+        const activeStay=await env.DB.prepare(`
+          SELECT id,guest_name,guest_phone,checkin_at,expected_checkout_at
+          FROM stays
+          WHERE room_id=?1 AND status='in_house'
+          LIMIT 1
+        `).bind(room.id).first();
+
+        const reservations=await env.DB.prepare(`
+          SELECT id,guest_name,guest_phone,checkin_at,checkout_at,status
+          FROM reservations
+          WHERE room_id=?1 AND status='booked'
+          ORDER BY datetime(checkin_at) ASC
+          LIMIT 100
+        `).bind(room.id).all();
+
+        result.push({
+          ...room,
+          activeStay:activeStay||null,
+          reservations:reservations.results
+        });
+      }
+      return json(result);
+    }
+
     if (url.pathname === "/api/reservations/availability" && request.method === "GET") {
       await ensureReservationsSchema(env);
       const actor = await requireSession(request, env);

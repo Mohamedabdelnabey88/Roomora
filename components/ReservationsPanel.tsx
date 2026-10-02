@@ -14,6 +14,11 @@ type AvailabilityRoom={
   id:string;number:string;floor:number;room_type:string;operational_status:string;
   available:boolean;reason:string;
 };
+type CalendarRoom={
+  id:string;number:string;floor:number;room_type:string;operational_status:string;
+  activeStay:null|{id:string;guest_name:string;guest_phone?:string|null;checkin_at:string;expected_checkout_at:string};
+  reservations:Array<{id:string;guest_name:string;guest_phone?:string|null;checkin_at:string;checkout_at:string;status:string}>;
+};
 
 function toLocal(date:Date){
   const pad=(n:number)=>String(n).padStart(2,"0");
@@ -41,6 +46,8 @@ export default function ReservationsPanel(){
   const [checkout,setCheckout]=useState(initial.checkout);
   const [note,setNote]=useState("");
   const [rooms,setRooms]=useState<AvailabilityRoom[]>([]);
+  const [calendarRooms,setCalendarRooms]=useState<CalendarRoom[]>([]);
+  const [calendarLoading,setCalendarLoading]=useState(true);
   const [selectedRoom,setSelectedRoom]=useState("");
   const [checking,setChecking]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -49,12 +56,16 @@ export default function ReservationsPanel(){
   const [now,setNow]=useState(Date.now());
 
   async function load(silent=false){
-    if(!silent)setLoading(true);
-    const r=await fetch("/api/reservations",{cache:"no-store"});
-    if(r.status===401){window.location.href="/login";return}
-    const p=await r.json().catch(()=>[]);
+    if(!silent){setLoading(true);setCalendarLoading(true)}
+    const [r,calendarResponse]=await Promise.all([
+      fetch("/api/reservations",{cache:"no-store"}),
+      fetch("/api/reservations/calendar",{cache:"no-store"})
+    ]);
+    if(r.status===401||calendarResponse.status===401){window.location.href="/login";return}
+    const [p,calendarPayload]=await Promise.all([r.json().catch(()=>[]),calendarResponse.json().catch(()=>[])]);
     if(r.ok&&Array.isArray(p))setRows(p);
-    if(!silent)setLoading(false);
+    if(calendarResponse.ok&&Array.isArray(calendarPayload))setCalendarRooms(calendarPayload);
+    if(!silent){setLoading(false);setCalendarLoading(false)}
   }
 
   async function loadAvailability(){
@@ -164,6 +175,21 @@ export default function ReservationsPanel(){
       <div className="ready"><CheckCircle size={20}/><span>جاهزة للدخول</span><b>{counts.ready}</b></div>
       <div className="late"><Clock size={20}/><span>متأخرة الوصول</span><b>{counts.late}</b></div>
       <div><Bed size={20}/><span>إجمالي النشطة</span><b>{counts.total}</b></div>
+    </section>
+
+    <section className="panel reservation-calendar-panel">
+      <div className="panel-head">
+        <div><span className="section-kicker">ROOM OCCUPANCY CALENDAR</span><h2>خريطة إشغال الغرف والحجوزات</h2><p className="reservation-calendar-sub">رؤية كاملة لكل غرفة: النزيل الحالي وجميع الحجوزات المستقبلية المسجلة بدون إخفاء الفترات.</p></div>
+      </div>
+      {calendarLoading?<div className="rooms-state">جاري تحميل خريطة الفترات…</div>:
+      <div className="reservation-calendar-list">{calendarRooms.map(room=><div className="reservation-calendar-room" key={room.id}>
+        <div className="reservation-calendar-room-head"><b>غرفة {room.number}</b><span>{room.room_type}</span></div>
+        <div className="reservation-calendar-periods">
+          {room.activeStay?<div className="reservation-period active-stay"><span>إقامة حالية</span><b>{room.activeStay.guest_name}</b><small>{fmt(room.activeStay.checkin_at)} ← {fmt(room.activeStay.expected_checkout_at)}</small></div>:null}
+          {room.reservations.map(rv=><div className="reservation-period future" key={rv.id}><span>حجز مستقبلي</span><b>{rv.guest_name}</b><small>{fmt(rv.checkin_at)} ← {fmt(rv.checkout_at)}</small></div>)}
+          {!room.activeStay&&room.reservations.length===0?<div className="reservation-period free"><CheckCircle size={15}/><b>لا توجد فترات محجوزة مسجلة</b></div>:null}
+        </div>
+      </div>)}</div>}
     </section>
 
     <section className="panel reservations-directory">
