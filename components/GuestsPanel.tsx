@@ -99,7 +99,14 @@ export default function GuestsPanel(){
   function todayCheckoutRows(){
     const today=riyadhDateKey(new Date());
     return rows
-      .filter(x=>x.status!=="cancelled"&&wasScheduledForDate(x,today))
+      .filter(x=>{
+        if(x.status==="cancelled")return false;
+        // A stay that was extended from today's original checkout is no longer
+        // part of today's operational checkout list. It can reappear later
+        // when its new checkout date becomes today.
+        if(wasExtendedFromDate(x,today))return false;
+        return Boolean(x.expected_checkout_at)&&riyadhDateKey(x.expected_checkout_at)===today;
+      })
       .sort((a,b)=>String(a.room_number).localeCompare(String(b.room_number),undefined,{numeric:true}));
   }
 
