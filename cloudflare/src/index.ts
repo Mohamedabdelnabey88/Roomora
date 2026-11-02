@@ -21,6 +21,16 @@ const json = (data: unknown, init: ResponseInit = {}) => new Response(JSON.strin
   headers: { "content-type": "application/json; charset=utf-8", ...cors, ...(init.headers || {}) }
 });
 
+function databaseFailureReason(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/no such table/i.test(message)) return "database_schema_incomplete";
+  if (/not authorized|authorization denied|SQLITE_AUTH/i.test(message)) return "database_access_denied";
+  if (/reading ['"]prepare|DB is undefined/i.test(message)) return "database_binding_missing";
+  if (/D1|SQLITE/i.test(message)) return "database_query_failed";
+  if (/JSON|BigInt|serializ/i.test(message)) return "response_encoding_failed";
+  return "internal_error";
+}
+
 const encoder = new TextEncoder();
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -152,13 +162,27 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
 
     if (url.pathname === "/health") {
-      const row = await env.DB.prepare("SELECT COUNT(*) AS rooms FROM rooms").first<{ rooms: number }>();
-      return json({ ok: true, service: "roomora-api", database: "connected", rooms: row?.rooms ?? 0 });
+      let stage = "query";
+      try {
+        const row = await env.DB.prepare("SELECT COUNT(*) AS rooms FROM rooms").first<{ rooms: number }>();
+        stage = "response";
+        return json({ ok: true, service: "roomora-api", database: "connected", rooms: Number(row?.rooms ?? 0) });
+      } catch (error) {
+        console.error("health_check_failed", { stage, error: error instanceof Error ? error.message : String(error) });
+        return json({ ok: false, error: "health_check_failed", stage, reason: databaseFailureReason(error) }, { status: 503 });
+      }
     }
 
     if (url.pathname === "/api/setup/status" && request.method === "GET") {
-      const row = await env.DB.prepare("SELECT COUNT(*) AS users FROM users").first<{ users: number }>();
-      return json({ setupRequired: (row?.users ?? 0) === 0, setupKeyConfigured: Boolean(env.SETUP_KEY) });
+      let stage = "query";
+      try {
+        const row = await env.DB.prepare("SELECT COUNT(*) AS users FROM users").first<{ users: number }>();
+        stage = "response";
+        return json({ setupRequired: Number(row?.users ?? 0) === 0, setupKeyConfigured: Boolean(env.SETUP_KEY) });
+      } catch (error) {
+        console.error("setup_status_failed", { stage, error: error instanceof Error ? error.message : String(error) });
+        return json({ error: "setup_status_failed", stage, reason: databaseFailureReason(error) }, { status: 503 });
+      }
     }
 
     if (url.pathname === "/api/setup/admin" && request.method === "POST") {
