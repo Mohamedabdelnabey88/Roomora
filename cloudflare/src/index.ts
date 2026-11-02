@@ -33,6 +33,13 @@ function databaseFailureReason(error: unknown) {
   return "internal_error";
 }
 
+function logReadUsage(path: string, results: readonly { meta?: { rows_read?: number } }[]) {
+  if (results.every(result => typeof result.meta?.rows_read === "number")) {
+    console.info("d1_read_usage", { path, data_queries: results.length,
+      rows_read: results.reduce((total, result) => total + (result.meta?.rows_read || 0), 0) });
+  }
+}
+
 const encoder = new TextEncoder();
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -84,17 +91,22 @@ async function requireSession(request: Request, env: Env): Promise<SessionUser |
   if (!token) return null;
   const tokenHash = await sha256Hex(token);
   const row = await env.DB.prepare(`
-    SELECT u.id, u.name, u.username, u.role
+    SELECT u.id, u.name, u.username, u.role, s.last_seen_at
     FROM sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ?1
       AND s.expires_at > CURRENT_TIMESTAMP
       AND u.active = 1
     LIMIT 1
-  `).bind(tokenHash).first<SessionUser>();
+  `).bind(tokenHash).first<SessionUser & { last_seen_at: string }>();
   if (!row) return null;
-  await env.DB.prepare("UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE token_hash = ?1").bind(tokenHash).run();
-  return row;
+  const { last_seen_at, ...user } = row;
+  const lastSeen = Date.parse((last_seen_at || "").replace(" ", "T") + "Z");
+  if (!Number.isFinite(lastSeen) || Date.now() - lastSeen >= 5 * 60 * 1000) {
+    await env.DB.prepare(`UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP
+      WHERE token_hash = ?1 AND last_seen_at <= datetime('now', '-5 minutes')`).bind(tokenHash).run();
+  }
+  return user;
 }
 
 function randomToken(bytes = 32) {
@@ -106,8 +118,26 @@ async function readJson<T>(request: Request): Promise<T | null> {
   try { return await request.json() as T; } catch { return null; }
 }
 
-async function ensureReservationsSchema(env: Env) {
-  await env.DB.batch([
+const reservationSchemaReady = new WeakMap<D1Database, Promise<void>>();
+const readIndexesReady = new WeakMap<D1Database, Promise<void>>();
+
+function ensureReadIndexes(env: Env): Promise<void> {
+  const existing = readIndexesReady.get(env.DB);
+  if (existing) return existing;
+  const pending = env.DB.batch([
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_requests_status_requested ON service_requests(status, requested_at)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_request_lines_request ON service_request_lines(request_id)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_approvals_service_request ON approval_requests(service_request_id)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_stays_status_room ON stays(status, room_id)")
+  ]).then(() => {}).catch(error => { readIndexesReady.delete(env.DB); throw error; });
+  readIndexesReady.set(env.DB, pending);
+  return pending;
+}
+
+function ensureReservationsSchema(env: Env): Promise<void> {
+  const existing = reservationSchemaReady.get(env.DB);
+  if (existing) return existing;
+  const pending = Promise.all([ensureReadIndexes(env), env.DB.batch([
     env.DB.prepare(`
       CREATE TABLE IF NOT EXISTS reservations (
         id TEXT PRIMARY KEY,
@@ -126,7 +156,9 @@ async function ensureReservationsSchema(env: Env) {
     `),
     env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_reservations_room_dates ON reservations(room_id,checkin_at,checkout_at,status)`),
     env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_reservations_status_checkin ON reservations(status,checkin_at)`)
-  ]);
+  ])]).then(() => {}).catch(error => { reservationSchemaReady.delete(env.DB); throw error; });
+  reservationSchemaReady.set(env.DB, pending);
+  return pending;
 }
 
 async function hotelBusinessDay(env: Env, at = new Date()) {
@@ -299,9 +331,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
 
     if (url.pathname === "/api/reservations/calendar" && request.method === "GET") {
-      await ensureReservationsSchema(env);
       const actor=await requireSession(request,env);
       if(!actor)return json({error:"unauthorized"},{status:401});
+      await ensureReservationsSchema(env);
 
       const rooms=await env.DB.prepare(`
         SELECT id,number,floor,room_type,operational_status
@@ -311,36 +343,43 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         id:string;number:string;floor:number;room_type:string;operational_status:string
       }>();
 
-      const result=[];
-      for(const room of rooms.results){
-        const activeStay=await env.DB.prepare(`
-          SELECT id,guest_name,guest_phone,checkin_at,expected_checkout_at
-          FROM stays
-          WHERE room_id=?1 AND status='in_house'
-          LIMIT 1
-        `).bind(room.id).first();
-
-        const reservations=await env.DB.prepare(`
-          SELECT id,guest_name,guest_phone,checkin_at,checkout_at,status
-          FROM reservations
-          WHERE room_id=?1 AND status='booked'
-          ORDER BY datetime(checkin_at) ASC
-          LIMIT 100
-        `).bind(room.id).all();
-
-        result.push({
-          ...room,
-          activeStay:activeStay||null,
-          reservations:reservations.results
-        });
+      const [stays, reservations] = await Promise.all([
+        env.DB.prepare(`
+          SELECT room_id,id,guest_name,guest_phone,checkin_at,expected_checkout_at
+          FROM stays WHERE status='in_house' AND room_id IN (SELECT id FROM rooms)
+          ORDER BY rowid
+        `).all<{ room_id:string; id:string; guest_name:string; guest_phone:string|null; checkin_at:string; expected_checkout_at:string }>(),
+        env.DB.prepare(`
+          SELECT room_id,id,guest_name,guest_phone,checkin_at,checkout_at,status FROM (
+            SELECT room_id,id,guest_name,guest_phone,checkin_at,checkout_at,status,
+                   ROW_NUMBER() OVER (PARTITION BY room_id ORDER BY datetime(checkin_at),id) AS position
+            FROM reservations WHERE status='booked'
+          ) WHERE position <= 100 ORDER BY datetime(checkin_at),id
+        `).all<{ room_id:string; id:string; guest_name:string; guest_phone:string|null; checkin_at:string; checkout_at:string; status:string }>()
+      ]);
+      const activeByRoom = new Map<string, Omit<(typeof stays.results)[number], "room_id">>();
+      for (const { room_id, ...stay } of stays.results) {
+        if (!activeByRoom.has(room_id)) activeByRoom.set(room_id, stay);
       }
+      const bookingsByRoom = new Map<string, Omit<(typeof reservations.results)[number], "room_id">[]>();
+      for (const { room_id, ...reservation } of reservations.results) {
+        const bookings = bookingsByRoom.get(room_id) || [];
+        bookings.push(reservation);
+        bookingsByRoom.set(room_id, bookings);
+      }
+      const result = rooms.results.map(room => ({
+        ...room,
+        activeStay: activeByRoom.get(room.id) || null,
+        reservations: bookingsByRoom.get(room.id) || []
+      }));
+      logReadUsage(url.pathname, [rooms, stays, reservations]);
       return json(result);
     }
 
     if (url.pathname === "/api/reservations/availability" && request.method === "GET") {
-      await ensureReservationsSchema(env);
       const actor = await requireSession(request, env);
       if (!actor) return json({ error:"unauthorized" }, { status:401 });
+      await ensureReservationsSchema(env);
 
       const fromRaw=url.searchParams.get("from") || "";
       const toRaw=url.searchParams.get("to") || "";
@@ -357,50 +396,38 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         id:string;number:string;floor:number;room_type:string;operational_status:string
       }>();
 
-      const result=[];
-      for(const room of rooms.results){
-        let available=room.operational_status!=="out_of_service";
-        let reason=available?"":"الغرفة خارج الخدمة";
-
-        if(available){
-          const stayConflict=await env.DB.prepare(`
-            SELECT id,guest_name,expected_checkout_at
-            FROM stays
-            WHERE room_id=?1 AND status='in_house'
-              AND datetime(expected_checkout_at) > datetime(?2)
-            LIMIT 1
-          `).bind(room.id,from.toISOString()).first<{id:string;guest_name:string;expected_checkout_at:string}>();
-          if(stayConflict){
-            available=false;
-            reason="إقامة حالية حتى "+stayConflict.expected_checkout_at;
-          }
-        }
-
-        if(available){
-          const reservationConflict=await env.DB.prepare(`
-            SELECT id,guest_name,checkin_at,checkout_at
-            FROM reservations
-            WHERE room_id=?1 AND status='booked'
-              AND datetime(checkin_at) < datetime(?3)
-              AND datetime(checkout_at) > datetime(?2)
-            ORDER BY checkin_at
-            LIMIT 1
-          `).bind(room.id,from.toISOString(),to.toISOString()).first<{id:string;guest_name:string;checkin_at:string;checkout_at:string}>();
-          if(reservationConflict){
-            available=false;
-            reason="حجز متداخل";
-          }
-        }
-
-        result.push({...room,available,reason});
+      const [stays, reservations] = await Promise.all([
+        env.DB.prepare(`
+          SELECT room_id,expected_checkout_at FROM stays
+          WHERE status='in_house' AND room_id IN (SELECT id FROM rooms)
+            AND datetime(expected_checkout_at) > datetime(?1)
+          ORDER BY rowid
+        `).bind(from.toISOString()).all<{room_id:string;expected_checkout_at:string}>(),
+        env.DB.prepare(`
+          SELECT room_id FROM reservations WHERE status='booked'
+            AND datetime(checkin_at) < datetime(?2) AND datetime(checkout_at) > datetime(?1)
+        `).bind(from.toISOString(),to.toISOString()).all<{room_id:string}>()
+      ]);
+      const staysByRoom = new Map<string,string>();
+      for (const stay of stays.results) {
+        if (!staysByRoom.has(stay.room_id)) staysByRoom.set(stay.room_id,stay.expected_checkout_at);
       }
+      const bookedRooms = new Set(reservations.results.map(reservation => reservation.room_id));
+      const result = rooms.results.map(room => {
+        const checkout = staysByRoom.get(room.id);
+        const reason = room.operational_status === "out_of_service" ? "الغرفة خارج الخدمة"
+          : checkout ? "إقامة حالية حتى " + checkout
+          : bookedRooms.has(room.id) ? "حجز متداخل" : "";
+        return { ...room, available: reason === "", reason };
+      });
+      logReadUsage(url.pathname, [rooms, stays, reservations]);
       return json(result);
     }
 
     if (url.pathname === "/api/reservations" && request.method === "GET") {
-      await ensureReservationsSchema(env);
       const actor=await requireSession(request,env);
       if(!actor)return json({error:"unauthorized"},{status:401});
+      await ensureReservationsSchema(env);
       const result=await env.DB.prepare(`
         SELECT rv.id,rv.room_id,rv.guest_name,rv.guest_phone,rv.checkin_at,rv.checkout_at,
                rv.status,rv.note,rv.stay_id,rv.created_at,
@@ -418,9 +445,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     if (url.pathname === "/api/reservations" && request.method === "POST") {
-      await ensureReservationsSchema(env);
       const actor=await requireSession(request,env);
       if(!actor)return json({error:"unauthorized"},{status:401});
+      await ensureReservationsSchema(env);
       const body=await readJson<{
         roomId?:string;guestName?:string;guestPhone?:string;
         checkinAt?:string;checkoutAt?:string;note?:string;
@@ -477,9 +504,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     if (url.pathname.match(/^\/api\/reservations\/[^/]+\/cancel$/) && request.method === "POST") {
-      await ensureReservationsSchema(env);
       const actor=await requireSession(request,env);
       if(!actor)return json({error:"unauthorized"},{status:401});
+      await ensureReservationsSchema(env);
       const reservationId=url.pathname.split("/")[3]||"";
       const current=await env.DB.prepare(`
         SELECT id,status FROM reservations WHERE id=?1 LIMIT 1
@@ -497,9 +524,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     if (url.pathname.match(/^\/api\/reservations\/[^/]+\/checkin$/) && request.method === "POST") {
-      await ensureReservationsSchema(env);
       const actor=await requireSession(request,env);
       if(!actor)return json({error:"unauthorized"},{status:401});
+      await ensureReservationsSchema(env);
       const reservationId=url.pathname.split("/")[3]||"";
       const reservation=await env.DB.prepare(`
         SELECT rv.id,rv.room_id,rv.guest_name,rv.guest_phone,rv.checkin_at,rv.checkout_at,rv.status,
@@ -1073,12 +1100,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const actor = await requireSession(request, env);
       if (!actor) return json({ error:"unauthorized" }, { status:401 });
 
+      await ensureReadIndexes(env);
+
       const scope = url.searchParams.get("scope") || "active";
       const roomNumber = url.searchParams.get("room")?.trim() || "";
       const statusFilter =
         scope === "all" ? "" :
         scope === "completed" ? "AND sr.status IN ('delivered','cancelled')" :
-        "AND sr.status NOT IN ('delivered','cancelled')";
+        "AND sr.status IN ('new','acknowledged','preparing','approval_required')";
       const roomFilter = roomNumber ? "AND r.number = ?1" : "";
 
       const sql = `
@@ -1120,6 +1149,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
       const stmt = env.DB.prepare(sql);
       const result = roomNumber ? await stmt.bind(roomNumber).all() : await stmt.all();
+      logReadUsage(url.pathname, [result]);
       return json(result.results);
     }
 
@@ -1641,6 +1671,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const user = await requireSession(request, env);
       if (!user) return json({ error: "unauthorized" }, { status: 401 });
 
+      await ensureReadIndexes(env);
+
       const result = await env.DB.prepare(`
         SELECT
           r.id,
@@ -1653,19 +1685,19 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           s.guest_phone,
           s.checkin_at,
           s.expected_checkout_at,
-          (
-            SELECT COUNT(*)
-            FROM service_requests sr
-            WHERE sr.room_id = r.id
-              AND sr.stay_id = s.id
-              AND sr.status NOT IN ('delivered','cancelled')
-          ) AS open_requests
+          COALESCE(open_requests.count, 0) AS open_requests
         FROM rooms r
         LEFT JOIN stays s
           ON s.room_id = r.id
          AND s.status = 'in_house'
+        LEFT JOIN (
+          SELECT room_id,stay_id,COUNT(*) AS count FROM service_requests
+          WHERE status IN ('new','acknowledged','preparing','approval_required')
+          GROUP BY room_id,stay_id
+        ) open_requests ON open_requests.room_id=r.id AND open_requests.stay_id=s.id
         ORDER BY r.floor, CASE WHEN r.number GLOB '[0-9]*' THEN CAST(r.number AS INTEGER) ELSE 0 END, r.number
       `).all();
+      logReadUsage(url.pathname, [result]);
       return json(result.results);
     }
 

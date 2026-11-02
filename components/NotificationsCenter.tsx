@@ -1,4 +1,5 @@
 "use client";
+import { fetchOperations, startOperationsRefresh } from "@/lib/operations-events";
 
 import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
@@ -26,8 +27,8 @@ export default function NotificationsCenter(){
   async function load(silent=false){
     if(!silent)setLoading(true);
     const [rr,rq]=await Promise.all([
-      fetch("/api/rooms",{cache:"no-store"}),
-      fetch("/api/requests?scope=all",{cache:"no-store"})
+      fetchOperations("/api/rooms",{cache:"no-store"}),
+      fetchOperations("/api/requests",{cache:"no-store"})
     ]);
     if(rr.status===401||rq.status===401){window.location.href="/login";return}
     const [roomsPayload,requestsPayload]=await Promise.all([rr.json().catch(()=>[]),rq.json().catch(()=>[])]);
@@ -38,13 +39,9 @@ export default function NotificationsCenter(){
 
   useEffect(()=>{
     void load();
-    const refresh=()=>void load(true);
-    const poll=window.setInterval(refresh,30000);
+    const stopRefresh=startOperationsRefresh(()=>load(true));
     const clock=window.setInterval(()=>setNow(Date.now()),60000);
-    const visible=()=>{if(document.visibilityState==="visible")refresh()};
-    window.addEventListener("focus",refresh);
-    document.addEventListener("visibilitychange",visible);
-    return()=>{window.clearInterval(poll);window.clearInterval(clock);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",visible)}
+    return()=>{stopRefresh();window.clearInterval(clock)}
   },[]);
 
   const notices=useMemo<Notice[]>(()=>{

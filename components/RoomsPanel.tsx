@@ -1,4 +1,5 @@
 "use client";
+import { fetchOperations, notifyOperationsChanged, startOperationsRefresh } from "@/lib/operations-events";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -6,7 +7,6 @@ import { ArrowRight, Bed, CalendarBlank, CheckCircle, MagnifyingGlass, Plus } fr
 import { mapApiRoom, type ApiRoom, type Room } from "@/lib/data";
 import { CheckinDialog, ExtendStayDialog } from "@/components/StayDialogs";
 import RequestDialog from "@/components/RequestDialog";
-import { notifyOperationsChanged, subscribeOperationsChanged } from "@/lib/operations-events";
 
 const labels = {
   available:"متاحة",
@@ -30,7 +30,7 @@ export default function RoomsPanel() {
 
   async function load() {
     setLoading(true);
-    const response=await fetch("/api/rooms",{cache:"no-store"});
+    const response=await fetchOperations("/api/rooms",{cache:"no-store"});
     if (response.status===401) { window.location.href="/login"; return; }
     const payload=await response.json().catch(()=>[]);
     if (!response.ok || !Array.isArray(payload)) {
@@ -45,7 +45,7 @@ export default function RoomsPanel() {
 
   useEffect(()=>{
     void load();
-    const unsubscribe=subscribeOperationsChanged(()=>{ void load(); });
+    const unsubscribe=startOperationsRefresh(()=>load(),{intervalMs:0});
     return unsubscribe;
   },[]);
 
@@ -66,7 +66,7 @@ export default function RoomsPanel() {
   async function checkout(room:Room) {
     if (!room.stayId) return;
     if (!window.confirm("تأكيد تسجيل خروج النزيل من الغرفة "+room.number+"؟")) return;
-    const response=await fetch("/api/stays/"+encodeURIComponent(room.stayId)+"/checkout",{method:"POST"});
+    const response=await fetchOperations("/api/stays/"+encodeURIComponent(room.stayId)+"/checkout",{method:"POST"});
     const payload=await response.json().catch(()=>({}));
     if (!response.ok) {
       if (payload.error==="open_requests_exist") setMessage("لا يمكن تسجيل الخروج قبل إغلاق الطلبات المفتوحة ("+String(payload.count||0)+").");

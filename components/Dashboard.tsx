@@ -1,4 +1,5 @@
 "use client";
+import { fetchOperations, notifyOperationsChanged, startOperationsRefresh } from "@/lib/operations-events";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -14,7 +15,6 @@ import { getHotelBusinessDay } from "@/lib/business-day";
 import { CheckinDialog, ExtendStayDialog, RoomCheckinPicker } from "@/components/StayDialogs";
 import RequestDialog from "@/components/RequestDialog";
 import RequestActions, { type ActiveRequest } from "@/components/RequestActions";
-import { notifyOperationsChanged, subscribeOperationsChanged } from "@/lib/operations-events";
 
 const labels = {
   available:"متاحة",
@@ -61,7 +61,7 @@ export default function Dashboard() {
 
   async function loadRooms(silent=false) {
     if(!silent) setLoadingRooms(true);
-    return fetch("/api/rooms", { cache: "no-store" })
+    return fetchOperations("/api/rooms", { cache: "no-store" })
       .then(async (res) => {
         if (res.status === 401) { window.location.href = "/login"; throw new Error("unauthorized"); }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -86,7 +86,7 @@ export default function Dashboard() {
   }
 
   async function loadRequests() {
-    const response = await fetch("/api/requests",{cache:"no-store"});
+    const response = await fetchOperations("/api/requests",{cache:"no-store"});
     if (response.status === 401) { window.location.href="/login"; return; }
     if(!response.ok) return;
     const payload = await response.json().catch(()=>[]);
@@ -99,7 +99,7 @@ export default function Dashboard() {
   }
 
   async function loadReservations() {
-    const response=await fetch("/api/reservations",{cache:"no-store"});
+    const response=await fetchOperations("/api/reservations",{cache:"no-store"});
     if(response.status===401){window.location.href="/login";return}
     if(!response.ok)return;
     const payload=await response.json().catch(()=>[]);
@@ -112,7 +112,7 @@ export default function Dashboard() {
   }
 
   async function loadCurrentUser() {
-    const response = await fetch("/api/auth/me",{cache:"no-store"});
+    const response = await fetchOperations("/api/auth/me",{cache:"no-store"});
     if (response.status === 401) { window.location.href="/login"; return; }
     const payload = await response.json().catch(()=>null);
     if (payload?.user) setCurrentUser({name:payload.user.name,role:payload.user.role});
@@ -124,22 +124,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     void Promise.all([loadRooms(false),loadRequests(),loadReservations(),loadCurrentUser()]);
-    const refresh = () => { void refreshOperations(); };
-    const timer = window.setInterval(refresh, 30000);
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") refresh();
-    };
-    const unsubscribe = subscribeOperationsChanged(refresh);
-    window.addEventListener("focus", refresh);
-    window.addEventListener("pageshow", refresh);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener("pageshow", refresh);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      unsubscribe();
-    };
+    return startOperationsRefresh(refreshOperations);
   }, []);
 
   useEffect(()=>{
@@ -268,7 +253,7 @@ export default function Dashboard() {
     if (!room.stayId) return;
     if (!window.confirm("تأكيد تسجيل خروج النزيل من الغرفة " + room.number + "؟")) return;
     setActionError("");
-    const response = await fetch("/api/stays/" + encodeURIComponent(room.stayId) + "/checkout", { method:"POST" });
+    const response = await fetchOperations("/api/stays/" + encodeURIComponent(room.stayId) + "/checkout", { method:"POST" });
     const payload = await response.json().catch(()=>({}));
     if (!response.ok) {
       if (payload.error === "active_stay_not_found") {
@@ -354,7 +339,7 @@ export default function Dashboard() {
       <div className="user-card">
         <div className="avatar">{(currentUser?.name || "م").slice(0,1)}</div>
         <div><b>{currentUser?.name || "مستخدم Roomora"}</b><span>{currentUser?.role==="admin"?"Administrator":"Reception"}</span></div>
-        <button className="logout-icon" onClick={async()=>{ await fetch("/api/auth/logout",{method:"POST"}); window.location.href="/login"; }} aria-label="تسجيل الخروج"><SignOut size={18}/></button>
+        <button className="logout-icon" onClick={async()=>{ await fetchOperations("/api/auth/logout",{method:"POST"}); window.location.href="/login"; }} aria-label="تسجيل الخروج"><SignOut size={18}/></button>
       </div>
     </aside>
 

@@ -1,4 +1,5 @@
 "use client";
+import { fetchOperations, invalidateOperationsRequests } from "@/lib/operations-events";
 
 import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
@@ -31,8 +32,8 @@ export default function AppShell({children}:{children:React.ReactNode}){
   useEffect(()=>{
     let mounted=true;
     Promise.all([
-      fetch("/api/auth/me",{cache:"no-store"}),
-      fetch("/api/requests",{cache:"no-store"})
+      fetchOperations("/api/auth/me",{cache:"no-store"}),
+      fetchOperations("/api/requests",{cache:"no-store"})
     ]).then(async([meRes,reqRes])=>{
       if(meRes.status===401){window.location.href="/login";return;}
       const me=await meRes.json().catch(()=>null);
@@ -47,7 +48,8 @@ export default function AppShell({children}:{children:React.ReactNode}){
   const visible=useMemo(()=>items.filter(i=>!i.admin||user?.role==="admin"),[user?.role]);
 
   async function logout(){
-    await fetch("/api/auth/logout",{method:"POST"}).catch(()=>null);
+    await fetchOperations("/api/auth/logout",{method:"POST"}).catch(()=>null);
+    invalidateOperationsRequests();
     window.location.href="/login";
   }
 

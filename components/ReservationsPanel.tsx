@@ -1,4 +1,5 @@
 "use client";
+import { fetchOperations, notifyOperationsChanged, startOperationsRefresh } from "@/lib/operations-events";
 
 import { FormEvent,useEffect,useMemo,useState } from "react";
 import { Bed,CalendarBlank,CheckCircle,Clock,MagnifyingGlass,Phone,Plus,User,X } from "@phosphor-icons/react";
@@ -58,8 +59,8 @@ export default function ReservationsPanel(){
   async function load(silent=false){
     if(!silent){setLoading(true);setCalendarLoading(true)}
     const [r,calendarResponse]=await Promise.all([
-      fetch("/api/reservations",{cache:"no-store"}),
-      fetch("/api/reservations/calendar",{cache:"no-store"})
+      fetchOperations("/api/reservations",{cache:"no-store"}),
+      fetchOperations("/api/reservations/calendar",{cache:"no-store"})
     ]);
     if(r.status===401||calendarResponse.status===401){window.location.href="/login";return}
     const [p,calendarPayload]=await Promise.all([r.json().catch(()=>[]),calendarResponse.json().catch(()=>[])]);
@@ -72,7 +73,7 @@ export default function ReservationsPanel(){
     const from=new Date(checkin),to=new Date(checkout);
     if(!Number.isFinite(from.getTime())||!Number.isFinite(to.getTime())||from>=to){setRooms([]);return}
     setChecking(true);setError("");
-    const r=await fetch("/api/reservations/availability?from="+encodeURIComponent(from.toISOString())+"&to="+encodeURIComponent(to.toISOString()),{cache:"no-store"});
+    const r=await fetchOperations("/api/reservations/availability?from="+encodeURIComponent(from.toISOString())+"&to="+encodeURIComponent(to.toISOString()),{cache:"no-store"});
     const p=await r.json().catch(()=>[]);
     if(r.ok&&Array.isArray(p)){
       setRooms(p);
@@ -83,8 +84,7 @@ export default function ReservationsPanel(){
 
   useEffect(()=>{
     void load();
-    const timer=window.setInterval(()=>{setNow(Date.now());void load(true)},30000);
-    return()=>window.clearInterval(timer);
+    return startOperationsRefresh(()=>{setNow(Date.now());return load(true)});
   },[]);
 
   useEffect(()=>{if(createOpen)void loadAvailability()},[createOpen,checkin,checkout]);
@@ -98,7 +98,7 @@ export default function ReservationsPanel(){
     e.preventDefault();
     if(!selectedRoom){setError("اختر غرفة متاحة للفترة المحددة.");return}
     setSaving(true);setError("");
-    const r=await fetch("/api/reservations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
+    const r=await fetchOperations("/api/reservations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({
       roomId:selectedRoom,guestName:guestName.trim(),guestPhone:guestPhone.trim()||undefined,
       checkinAt:new Date(checkin).toISOString(),checkoutAt:new Date(checkout).toISOString(),note:note.trim()||undefined
     })});
@@ -113,12 +113,12 @@ export default function ReservationsPanel(){
       };
       setError(map[p.error]||"تعذر إنشاء الحجز.");setSaving(false);await loadAvailability();return;
     }
-    setSaving(false);setCreateOpen(false);resetCreate();await load();
+    setSaving(false);setCreateOpen(false);resetCreate();notifyOperationsChanged();await load();
   }
 
   async function checkinReservation(row:Reservation){
     setActionError("");
-    const r=await fetch("/api/reservations/"+encodeURIComponent(row.id)+"/checkin",{method:"POST"});
+    const r=await fetchOperations("/api/reservations/"+encodeURIComponent(row.id)+"/checkin",{method:"POST"});
     const p=await r.json().catch(()=>({}));
     if(!r.ok){
       const map:Record<string,string>={
@@ -130,13 +130,15 @@ export default function ReservationsPanel(){
       };
       setActionError(map[p.error]||"تعذر تسجيل دخول الحجز.");return;
     }
+    notifyOperationsChanged();
     await load();
   }
 
   async function cancelReservation(row:Reservation){
     if(!window.confirm("إلغاء حجز "+row.guest_name+" للغرفة "+row.room_number+"؟"))return;
-    const r=await fetch("/api/reservations/"+encodeURIComponent(row.id)+"/cancel",{method:"POST"});
+    const r=await fetchOperations("/api/reservations/"+encodeURIComponent(row.id)+"/cancel",{method:"POST"});
     if(!r.ok){setActionError("تعذر إلغاء الحجز.");return}
+    notifyOperationsChanged();
     await load();
   }
 

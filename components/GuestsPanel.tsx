@@ -1,4 +1,5 @@
 "use client";
+import { fetchOperations, notifyOperationsChanged, startOperationsRefresh } from "@/lib/operations-events";
 import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -33,7 +34,7 @@ export default function GuestsPanel(){
 
   async function load(silent=false){
     if(!silent)setLoading(true);
-    const [r,u]=await Promise.all([fetch("/api/stays",{cache:"no-store"}),fetch("/api/auth/me",{cache:"no-store"})]);
+    const [r,u]=await Promise.all([fetchOperations("/api/stays",{cache:"no-store"}),fetchOperations("/api/auth/me",{cache:"no-store"})]);
     if(r.status===401||u.status===401){window.location.href="/login";return;}
     const p=await r.json().catch(()=>[]);
     const up=await u.json().catch(()=>null);
@@ -43,19 +44,14 @@ export default function GuestsPanel(){
 
   useEffect(()=>{
     void load();
-    const refresh=()=>{void load(true)};
-    const timer=window.setInterval(refresh,30000);
-    const onVisibility=()=>{if(document.visibilityState==="visible")refresh()};
-    window.addEventListener("focus",refresh);
-    document.addEventListener("visibilitychange",onVisibility);
-    return()=>{window.clearInterval(timer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",onVisibility)};
+    return startOperationsRefresh(()=>load(true));
   },[]);
 
   async function deleteStay(id:string){
     if(role!=="admin"||deletingId)return;
     setDeletingId(id);setDeleteError("");
     try{
-      const response=await fetch("/api/stays/"+encodeURIComponent(id),{method:"DELETE"});
+      const response=await fetchOperations("/api/stays/"+encodeURIComponent(id),{method:"DELETE"});
       const payload=await response.json().catch(()=>({}));
       const map:Record<string,string>={
         forbidden:"الحذف النهائي متاح لمدير النظام فقط.",
@@ -66,6 +62,7 @@ export default function GuestsPanel(){
       setDeleteId(null);
       if(detailId===id)setDetailId(null);
       setRows(old=>old.filter(row=>row.id!==id));
+      notifyOperationsChanged();
       await load(true);
     }catch(e){
       setDeleteError(e instanceof Error?e.message:"تعذر حذف النزيل والإقامة.");
@@ -296,6 +293,6 @@ export default function GuestsPanel(){
     :<div className="guest-delete-confirm"><span><WarningCircle size={13}/> حذف النزيل والحجز وكل طلباته؟</span><div><button onClick={()=>setDeleteId(null)} disabled={deletingId===x.id}>تراجع</button><button className="danger" onClick={()=>void deleteStay(x.id)} disabled={deletingId===x.id}>{deletingId===x.id?"جاري الحذف…":"تأكيد الحذف"}</button></div>{deleteError?<small>{deleteError}</small>:null}</div>):null}
 </div>:<span>—</span>}</td></tr>)}</tbody></table></div>}
     </section>
-    <StayDetailDialog stayId={detailId} role={role} onClose={()=>setDetailId(null)} onDeleted={async()=>{setDetailId(null);await load(true)}}/>
+    <StayDetailDialog stayId={detailId} role={role} onClose={()=>setDetailId(null)} onDeleted={async()=>{setDetailId(null);notifyOperationsChanged();await load(true)}}/>
   </main>;
 }
