@@ -9,3 +9,11 @@ export function fetchRoomoraApi(input: string | URL | Request, init: RequestInit
   headers.set("accept", "application/json");
   return fetcher(input, { ...init, headers });
 }
+
+// Hotel data stays in the authenticated application cache, never the public CDN.
+export function roomoraResponseHeaders(response: Response): Record<string,string> {
+  const headers: Record<string,string> = { "cache-control": "private, no-store" };
+  const state=response.headers.get("x-roomora-cache");
+  if(state==="HIT"||state==="MISS")headers["x-roomora-cache"]=state;
+  return headers;
+}

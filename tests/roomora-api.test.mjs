@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchRoomoraApi, ROOMORA_USER_AGENT } from '../lib/roomora-api.ts';
+import { fetchRoomoraApi, ROOMORA_USER_AGENT, roomoraResponseHeaders } from '../lib/roomora-api.ts';
 
 test('Worker requests identify Roomora and preserve authorization and payload', async () => {
   const body = JSON.stringify({ example: true });
@@ -36,4 +36,9 @@ test('backend failures preserve their status and are never retried', async () =>
     calls++;return Response.json({ error: 'unavailable' }, { status: 503 });
   });
   assert.equal(response.status, 503);assert.equal(calls, 1);
+});
+
+test('authenticated hotel responses cannot enter the public CDN cache',()=>{
+  assert.deepEqual(roomoraResponseHeaders(Response.json([],{headers:{"x-roomora-cache":"HIT"}})),{"cache-control":"private, no-store","x-roomora-cache":"HIT"});
+  assert.deepEqual(roomoraResponseHeaders(Response.json([],{headers:{"x-roomora-cache":"unexpected"}})),{"cache-control":"private, no-store"});
 });

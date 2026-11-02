@@ -1,14 +1,14 @@
 "use client";
 import { fetchOperations, notifyOperationsChanged, startOperationsRefresh } from "@/lib/operations-events";
 
-import { useEffect,useMemo,useState } from "react";
+import { useCallback,useEffect,useMemo,useRef,useState } from "react";
+import { requestFilterQuery, riyadhDateKey } from "@/lib/request-query";
 import Link from "next/link";
 import { CalendarBlank,Clock,DownloadSimple,Funnel,ListChecks,MagnifyingGlass,ShieldCheck } from "@phosphor-icons/react";
 import RequestActions,{type ActiveRequest} from "@/components/RequestActions";
 import RequestDetailDialog from "@/components/RequestDetailDialog";
 
 const statusLabels:Record<string,string>={new:"جديد",acknowledged:"تم الاستلام",preparing:"جاري التجهيز",approval_required:"بانتظار موافقة",delivered:"تم التسليم",cancelled:"ملغي"};
-const activeStatuses=new Set(["new","acknowledged","preparing","approval_required"]);
 
 export default function RequestsPanel(){
   const [requests,setRequests]=useState<ActiveRequest[]>([]);
@@ -27,22 +27,47 @@ export default function RequestsPanel(){
   const [dateFrom,setDateFrom]=useState("");
   const [dateTo,setDateTo]=useState("");
 
-  async function load(silent=false){
-    if(!silent)setLoading(true);
+  const [debouncedQuery,setDebouncedQuery]=useState("");
+  const [counts,setCounts]=useState({active:0,approvals:0,late:0,completed:0});
+  const [paging,setPaging]=useState<{filter:string;cursors:string[]}>({filter:"",cursors:[""]});
+  const [nextCursor,setNextCursor]=useState<string|null>(null);
+  const [hasMore,setHasMore]=useState(false);
+  const requestSequence=useRef(0);
+  const today=riyadhDateKey(new Date());
+  const filter=useMemo(()=>requestFilterQuery({scope,status,query:debouncedQuery,quickFilter,dateMode,dateFrom,dateTo},today),[scope,status,debouncedQuery,quickFilter,dateMode,dateFrom,dateTo,today]);
+  const cursors=paging.filter===filter.query?paging.cursors:[""];
+  const cursor=cursors[cursors.length-1];
+
+  useEffect(()=>{
+    const timer=window.setTimeout(()=>setDebouncedQuery(query),350);
+    return()=>window.clearTimeout(timer);
+  },[query]);
+
+  const load=useCallback(async(silent=false)=>{
+    const sequence=++requestSequence.current;
+    if(filter.error){setRequests([]);setError(filter.error);setLoading(false);setHasMore(false);return;}
+    if(!silent){setLoading(true);setHasMore(false);}
     try{
-      const [rr,ur]=await Promise.all([fetchOperations("/api/requests?scope=all",{cache:"no-store"}),fetchOperations("/api/auth/me",{cache:"no-store"})]);
-      if(rr.status===401||ur.status===401){window.location.href="/login";return}
-      const [rp,up]=await Promise.all([rr.json().catch(()=>[]),ur.json().catch(()=>null)]);
-      if(!rr.ok||!Array.isArray(rp))throw new Error("تعذر تحميل طلبات الغرف");
-      setRequests(rp);setRole(up?.user?.role||null);setError("");
-    }catch(e){setError(e instanceof Error?e.message:"تعذر تحميل طلبات الغرف")}
-    finally{if(!silent)setLoading(false)}
-  }
+      const parameters=new URLSearchParams(filter.query);
+      if(cursor)parameters.set("cursor",cursor);
+      const response=await fetchOperations("/api/requests?"+parameters.toString(),{cache:"no-store"});
+      if(sequence!==requestSequence.current)return;
+      if(response.status===401){window.location.href="/login";return;}
+      const payload=await response.json().catch(()=>null);
+      if(sequence!==requestSequence.current)return;
+      if(!response.ok||!Array.isArray(payload?.items)||!payload.counts)throw new Error("تعذر تحميل طلبات الغرف");
+      setRequests(payload.items);setCounts(payload.counts);
+      setRole(payload.role==="admin"?"admin":"reception");
+      setNextCursor(payload.nextCursor||null);setHasMore(Boolean(payload.hasMore));setError("");
+    }catch(error){if(sequence===requestSequence.current)setError(error instanceof Error?error.message:"تعذر تحميل طلبات الغرف");}
+    finally{if(sequence===requestSequence.current)setLoading(false);}
+  },[filter.query,filter.error,cursor]);
 
   useEffect(()=>{
     void load();
-    return startOperationsRefresh(()=>load(true));
-  },[]);
+    const stop=startOperationsRefresh(()=>load(true));
+    return()=>{stop();requestSequence.current++;};
+  },[load]);
 
   async function deleteRequest(id:string){
     if(role!=="admin"||deletingId)return;
@@ -67,41 +92,8 @@ export default function RequestsPanel(){
     }
   }
 
-  function riyadhDateKey(value:string|Date){
-    const date=typeof value==="string"?new Date(value):value;
-    const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Riyadh",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);
-    const read=(type:string)=>parts.find(p=>p.type===type)?.value||"";
-    return read("year")+"-"+read("month")+"-"+read("day");
-  }
-
-  function dayOffset(days:number){
-    const key=riyadhDateKey(new Date());
-    const d=new Date(key+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);
-  }
-
-  function dateMatches(value:string){
-    if(dateMode==="all")return true;
-    const key=riyadhDateKey(value);
-    if(dateMode==="today")return key===dayOffset(0);
-    if(dateMode==="yesterday")return key===dayOffset(-1);
-    if(dateMode==="month")return key.slice(0,7)===dayOffset(0).slice(0,7);
-    if(dateMode==="custom"){
-      if(dateFrom&&key<dateFrom)return false;
-      if(dateTo&&key>dateTo)return false;
-      return Boolean(dateFrom||dateTo);
-    }
-    return true;
-  }
-
   const ageMinutes=(value:string)=>Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/60000));
   const age=(value:string)=>{const m=ageMinutes(value);return m<1?"الآن":m<60?"منذ "+m+" د":"منذ "+Math.floor(m/60)+" س"};
-
-  const counts=useMemo(()=>({
-    active:requests.filter(r=>activeStatuses.has(r.status)).length,
-    approvals:requests.filter(r=>r.status==="approval_required").length,
-    late:requests.filter(r=>activeStatuses.has(r.status)&&ageMinutes(r.requested_at)>=15).length,
-    completed:requests.filter(r=>["delivered","cancelled"].includes(r.status)).length
-  }),[requests]);
 
   function applyQuickFilter(filter:"active"|"approvals"|"late"|"completed"){
     setQuickFilter(filter);
@@ -121,17 +113,10 @@ export default function RequestsPanel(){
     }
   }
 
-  const filtered=useMemo(()=>requests.filter(item=>{
-    const q=query.trim().toLowerCase();
-    const scopeMatch=scope==="all"||(scope==="active"?activeStatuses.has(item.status):["delivered","cancelled"].includes(item.status));
-    const statusMatch=status==="all"||item.status===status;
-    const lateMatch=quickFilter!=="late"||(activeStatuses.has(item.status)&&ageMinutes(item.requested_at)>=15);
-    const text=(item.room_number+" "+item.guest_name+" "+item.items).toLowerCase();
-    return scopeMatch&&statusMatch&&lateMatch&&dateMatches(item.requested_at)&&(!q||text.includes(q));
-  }),[requests,query,status,scope,quickFilter,dateMode,dateFrom,dateTo]);
+  const filtered=requests;
 
   return <main className="settings-page requests-page">
-    <header className="settings-header premium-page-head"><div><span className="section-kicker">SERVICE DESK</span><h1>مركز طلبات الغرف</h1><p>لوحة تشغيل لحظية من تسجيل الطلب حتى التسليم، مع SLA وموافقات الإدارة.</p></div><div className="live-badge"><i/> تحديث تلقائي كل 15 ثانية</div></header>
+    <header className="settings-header premium-page-head"><div><span className="section-kicker">SERVICE DESK</span><h1>مركز طلبات الغرف</h1><p>لوحة تشغيل لحظية من تسجيل الطلب حتى التسليم، مع SLA وموافقات الإدارة.</p></div><div className="live-badge"><i/> تحديث عند التغيير وكل دقيقة</div></header>
 
     <section className="request-kpis premium-kpis" aria-label="فلاتر الطلبات السريعة">
       <button type="button" aria-pressed={quickFilter==="active"} className={quickFilter==="active"?"active":""} onClick={()=>applyQuickFilter("active")}><ListChecks size={20}/><span>قيد التنفيذ</span><b>{counts.active}</b><small>طلبات تحتاج متابعة</small></button>
@@ -150,13 +135,13 @@ export default function RequestsPanel(){
         <button className={dateMode==="all"?"active":""} onClick={()=>setDateMode("all")}>كل السجل</button>
       </div>
       {dateMode==="custom"?<div className="requests-custom-range"><label>من<input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></label><label>إلى<input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/></label></div>:null}
-      <div className="requests-history-result"><b>{filtered.length}</b><span>طلب مطابق</span></div>
+      <div className="requests-history-result"><b>{filtered.length}</b><span>طلب في هذه الصفحة</span></div>
       <Link href="/reports" className="reports-shortcut"><DownloadSimple size={16}/> التقارير والتصدير</Link>
     </section>
 
-    <section className="panel requests-directory premium-directory">
+    <section className="panel requests-directory premium-directory" aria-busy={loading}>
       <div className="directory-toolbar pro-toolbar">
-        <div className="search wide"><MagnifyingGlass size={18}/><input value={query} onChange={e=>{setQuery(e.target.value);setQuickFilter(null)}} placeholder="بحث بالغرفة، النزيل أو الصنف…"/></div>
+        <div className="search wide"><MagnifyingGlass size={18}/><input maxLength={80} value={query} onChange={e=>{setQuery(e.target.value);setQuickFilter(null)}} placeholder="بحث بالغرفة، النزيل أو الصنف…"/></div>
         <div className="filter-select"><Funnel size={16}/><select value={scope} onChange={e=>{setScope(e.target.value as typeof scope);setQuickFilter(null)}}><option value="active">قيد التنفيذ</option><option value="completed">المكتملة والملغاة</option><option value="all">كل السجل</option></select><select value={status} onChange={e=>{setStatus(e.target.value);setQuickFilter(null)}}><option value="all">كل الحالات</option>{Object.entries(statusLabels).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>
       </div>
 
@@ -185,6 +170,11 @@ export default function RequestsPanel(){
           </div>
         </article>
       })}</div>}
+      <div className="directory-toolbar" aria-label="صفحات سجل الطلبات">
+        <button type="button" className="secondary-btn" disabled={loading||cursors.length===1} onClick={()=>setPaging({filter:filter.query,cursors:cursors.slice(0,-1)})}>السابق</button>
+        <span aria-live="polite">صفحة {cursors.length} · حتى 25 طلبًا</span>
+        <button type="button" className="secondary-btn" disabled={loading||!hasMore||!nextCursor} onClick={()=>{if(nextCursor)setPaging({filter:filter.query,cursors:[...cursors,nextCursor]})}}>التالي</button>
+      </div>
     </section>
     <RequestDetailDialog requestId={detailId} role={role} onClose={()=>setDetailId(null)} onDeleted={async()=>{setDetailId(null);notifyOperationsChanged();await load(true)}}/>
   </main>;
