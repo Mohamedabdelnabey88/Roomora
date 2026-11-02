@@ -28,6 +28,8 @@ export default function LoginPanel() {
       if (!response.ok || !payload?.user) {
         const messages: Record<string, string> = {
           invalid_credentials: "اسم المستخدم أو كلمة المرور غير صحيحة",
+          d1_read_limit_exceeded: "وصلت قاعدة البيانات إلى حد الاستخدام اليومي. تواصل مع مسؤول النظام لإعادة الخدمة",
+          d1_write_limit_exceeded: "وصلت قاعدة البيانات إلى حد الاستخدام اليومي. تواصل مع مسؤول النظام لإعادة الخدمة",
           too_many_attempts: "محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى",
           auth_service_timeout: "استغرقت خدمة تسجيل الدخول وقتًا طويلًا. حاول مرة أخرى",
           auth_service_unavailable: "خدمة تسجيل الدخول غير متاحة مؤقتًا. حاول مرة أخرى",

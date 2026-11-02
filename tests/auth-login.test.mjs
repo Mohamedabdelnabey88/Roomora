@@ -55,3 +55,19 @@ test('Worker rejects malformed credential types without querying database', asyn
     assert.deepEqual(await response.json(), { error: 'invalid_credentials' });
   }
 });
+
+test('daily database quotas are not misreported as a password problem', async () => {
+  for (const error of ['d1_read_limit_exceeded','d1_write_limit_exceeded']) {
+    assert.deepEqual(await loginAgainstApi('https://example.test',credentials,reply({error},503)),{ok:false,status:503,error});
+  }
+});
+
+test('Worker login distinguishes the account daily row read limit', async () => {
+  const response=await worker.fetch(new Request('https://example.test/api/auth/login',{method:'POST',body:JSON.stringify(credentials)}),{DB:{prepare(){throw new Error("D1_ERROR: Your account has exceeded D1's free tier daily row read limit.");}}});
+  assert.equal(response.status,503);assert.deepEqual(await response.json(),{error:'d1_read_limit_exceeded'});
+});
+
+test('protected endpoints return a quota error without bypassing authentication', async () => {
+  const response=await worker.fetch(new Request('https://example.test/api/auth/me',{headers:{authorization:'Bearer fixture-token'}}),{DB:{prepare(){throw new Error("D1_ERROR: Your account has exceeded D1's free tier daily row read limit.");}}});
+  assert.equal(response.status,503);assert.deepEqual(await response.json(),{error:'d1_read_limit_exceeded'});
+});

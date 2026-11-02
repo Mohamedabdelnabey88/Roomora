@@ -23,6 +23,8 @@ const json = (data: unknown, init: ResponseInit = {}) => new Response(JSON.strin
 
 function databaseFailureReason(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
+  if (/free tier daily row read limit/i.test(message)) return "d1_read_limit_exceeded";
+  if (/free tier daily row write limit/i.test(message)) return "d1_write_limit_exceeded";
   if (/no such table/i.test(message)) return "database_schema_incomplete";
   if (/not authorized|authorization denied|SQLITE_AUTH/i.test(message)) return "database_access_denied";
   if (/reading ['"]prepare|DB is undefined/i.test(message)) return "database_binding_missing";
@@ -156,8 +158,7 @@ async function hotelBusinessDay(env: Env, at = new Date()) {
 }
 
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+async function handleRequest(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
 
@@ -181,7 +182,7 @@ export default {
         return json({ setupRequired: Number(row?.users ?? 0) === 0, setupKeyConfigured: Boolean(env.SETUP_KEY) });
       } catch (error) {
         console.error("setup_status_failed", { stage, error: error instanceof Error ? error.message : String(error) });
-        return json({ error: "setup_status_failed", stage, reason: databaseFailureReason(error), diagnostic: error instanceof Error ? error.message.slice(0, 240) : "Unknown static setup query error" }, { status: 503 });
+        return json({ error: "setup_status_failed", stage, reason: databaseFailureReason(error) }, { status: 503 });
       }
     }
 
@@ -275,7 +276,8 @@ export default {
         });
       } catch (error) {
         console.error("auth_login_failed", { error: error instanceof Error ? error.message : String(error) });
-        return json({ error: "auth_service_unavailable" }, { status: 503 });
+        const reason = databaseFailureReason(error);
+        return json({ error: reason.startsWith("d1_") ? reason : "auth_service_unavailable" }, { status: 503 });
       }
     }
 
@@ -1668,5 +1670,16 @@ export default {
     }
 
     return json({ error: "not_found" }, { status: 404 });
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      return await handleRequest(request, env);
+    } catch (error) {
+      const reason = databaseFailureReason(error);
+      console.error("api_request_failed", { path: new URL(request.url).pathname, reason, error: error instanceof Error ? error.message : String(error) });
+      return json({ error: reason.startsWith("d1_") ? reason : "service_unavailable" }, { status: 503 });
+    }
   }
 };

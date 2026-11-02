@@ -23,6 +23,9 @@ export async function loginAgainstApi(baseUrl: string, credentials: { username: 
       if (response.status === 401 && payload?.error === "invalid_credentials") {
         return { ok: false, status: 401, error: "invalid_credentials" };
       }
+      if (response.status === 503 && ["d1_read_limit_exceeded", "d1_write_limit_exceeded"].includes(payload?.error)) {
+        return { ok: false, status: 503, error: payload.error };
+      }
       console.error("login_upstream_failed", { status: response.status });
       return { ok: false, status: response.status === 429 ? 429 : 503, error: response.status === 429 ? "too_many_attempts" : "auth_service_unavailable" };
     }
