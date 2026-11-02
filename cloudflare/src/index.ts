@@ -208,46 +208,51 @@ export default {
     }
 
     if (url.pathname === "/api/auth/login" && request.method === "POST") {
-      const body = await readJson<{ username?: string; password?: string }>(request);
-      const username = body?.username?.trim().toLowerCase();
-      const password = body?.password || "";
-      if (!username || !password) return json({ error: "invalid_credentials" }, { status: 401 });
+      try {
+        const body = await readJson<{ username?: string; password?: string }>(request);
+        const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
+        const password = typeof body?.password === "string" ? body.password : "";
+        if (!username || !password) return json({ error: "invalid_credentials" }, { status: 401 });
 
-      const user = await env.DB.prepare(`
-        SELECT id, name, username, role, password_hash
-        FROM users
-        WHERE username = ?1 AND active = 1
-        LIMIT 1
-      `).bind(username).first<SessionUser & { password_hash: string }>();
+        const user = await env.DB.prepare(`
+          SELECT id, name, username, role, password_hash
+          FROM users
+          WHERE username = ?1 AND active = 1
+          LIMIT 1
+        `).bind(username).first<SessionUser & { password_hash: string }>();
 
-      if (!user || !(await verifyPassword(password, user.password_hash))) {
-        return json({ error: "invalid_credentials" }, { status: 401 });
+        if (!user || !(await verifyPassword(password, user.password_hash))) {
+          return json({ error: "invalid_credentials" }, { status: 401 });
+        }
+
+        const token = randomToken();
+        const tokenHash = await sha256Hex(token);
+        const expires = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString().replace("T", " ").replace("Z", "");
+        await env.DB.prepare(`
+          INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_hint)
+          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        `).bind(
+          crypto.randomUUID(),
+          user.id,
+          tokenHash,
+          expires,
+          request.headers.get("user-agent")?.slice(0, 255) || null,
+          request.headers.get("cf-connecting-ip")?.slice(0, 64) || null
+        ).run();
+
+        await env.DB.prepare(`
+          INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id)
+          VALUES (?1, 'login', 'session', ?2)
+        `).bind(user.id, tokenHash.slice(0, 12)).run();
+
+        return json({
+          token,
+          user: { id: user.id, name: user.name, username: user.username, role: user.role }
+        });
+      } catch (error) {
+        console.error("auth_login_failed", { error: error instanceof Error ? error.message : String(error) });
+        return json({ error: "auth_service_unavailable" }, { status: 503 });
       }
-
-      const token = randomToken();
-      const tokenHash = await sha256Hex(token);
-      const expires = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString().replace("T", " ").replace("Z", "");
-      await env.DB.prepare(`
-        INSERT INTO sessions (id, user_id, token_hash, expires_at, user_agent, ip_hint)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-      `).bind(
-        crypto.randomUUID(),
-        user.id,
-        tokenHash,
-        expires,
-        request.headers.get("user-agent")?.slice(0, 255) || null,
-        request.headers.get("cf-connecting-ip")?.slice(0, 64) || null
-      ).run();
-
-      await env.DB.prepare(`
-        INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id)
-        VALUES (?1, 'login', 'session', ?2)
-      `).bind(user.id, tokenHash.slice(0, 12)).run();
-
-      return json({
-        token,
-        user: { id: user.id, name: user.name, username: user.username, role: user.role }
-      });
     }
 
     if (url.pathname === "/api/auth/me" && request.method === "GET") {

@@ -24,8 +24,17 @@ export default function LoginPanel() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ username: username.trim(), password })
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error === "invalid_credentials" ? "اسم المستخدم أو كلمة المرور غير صحيحة" : "تعذر تسجيل الدخول");
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.user) {
+        const messages: Record<string, string> = {
+          invalid_credentials: "اسم المستخدم أو كلمة المرور غير صحيحة",
+          too_many_attempts: "محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى",
+          auth_service_timeout: "استغرقت خدمة تسجيل الدخول وقتًا طويلًا. حاول مرة أخرى",
+          auth_service_unavailable: "خدمة تسجيل الدخول غير متاحة مؤقتًا. حاول مرة أخرى",
+          auth_service_invalid_response: "تعذر الحصول على رد سليم من خدمة تسجيل الدخول. حاول مرة أخرى"
+        };
+        throw new Error(messages[payload?.error] || "تعذر الاتصال بخدمة تسجيل الدخول. حاول مرة أخرى");
+      }
       const next = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
       router.replace(next || "/");
       router.refresh();
