@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { loginAgainstApi } from "@/lib/login-api";
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_credentials" }, { status: 401 });
   }
 
-  const result = await loginAgainstApi(API_BASE, { username: body.username.trim(), password: body.password });
+  const result = await loginAgainstApi(API_BASE, { username: body.username.trim(), password: body.password }, fetchRoomoraApi);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 
   const jar = await cookies();

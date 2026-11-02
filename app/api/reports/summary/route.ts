@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -10,8 +11,8 @@ export async function GET(){
 
   const headers={authorization:"Bearer "+token};
   const [summaryResponse,staysResponse]=await Promise.all([
-    fetch(API_BASE+"/api/reports/summary",{headers,cache:"no-store"}),
-    fetch(API_BASE+"/api/stays",{headers,cache:"no-store"})
+    fetchRoomoraApi(API_BASE+"/api/reports/summary",{headers,cache:"no-store"}),
+    fetchRoomoraApi(API_BASE+"/api/stays",{headers,cache:"no-store"})
   ]);
   const summary=await summaryResponse.json().catch(()=>null);
   const stays=await staysResponse.json().catch(()=>[]);

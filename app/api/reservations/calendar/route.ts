@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -11,7 +12,7 @@ async function token() {
 export async function GET() {
   const t=await token();
   if(!t)return NextResponse.json({error:"unauthorized"},{status:401});
-  const response=await fetch(API_BASE+"/api/reservations/calendar",{headers:{authorization:"Bearer "+t},cache:"no-store"});
+  const response=await fetchRoomoraApi(API_BASE+"/api/reservations/calendar",{headers:{authorization:"Bearer "+t},cache:"no-store"});
   const payload=await response.json().catch(()=>({error:"invalid_response"}));
   return NextResponse.json(payload,{status:response.status});
 }

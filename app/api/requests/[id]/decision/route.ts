@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -9,7 +10,7 @@ export async function POST(request:Request, context:{params:Promise<{id:string}>
   if (!token) return NextResponse.json({error:"unauthorized"},{status:401});
   const {id}=await context.params;
   try {
-    const response=await fetch(API_BASE + "/api/requests/" + encodeURIComponent(id) + "/decision",{
+    const response=await fetchRoomoraApi(API_BASE + "/api/requests/" + encodeURIComponent(id) + "/decision",{
       method:"POST",
       headers:{"content-type":"application/json",authorization:"Bearer "+token},
       body:await request.text(),
