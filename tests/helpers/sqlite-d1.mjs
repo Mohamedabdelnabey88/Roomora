@@ -23,7 +23,15 @@ export function createDatabase({ extraRooms = 0 } = {}) {
       async run(){statements.push({sql,params});return {success:true,meta:sqlite.prepare(query).run(...ordered)};}
     };
   }
-  const DB={ prepare,async batch(items){return Promise.all(items.map(s=>s.run()));} };
+  let batchTail=Promise.resolve();
+  const DB={prepare,batch(items){
+    const pending=batchTail.then(async()=>{
+      sqlite.exec('BEGIN');
+      try{const results=[];for(const item of items)results.push(await item.run());sqlite.exec('COMMIT');return results;}
+      catch(error){sqlite.exec('ROLLBACK');throw error;}
+    });
+    batchTail=pending.then(()=>{},()=>{});return pending;
+  }};
   return {sqlite,DB,statements,env:{DB},token,
     request(path,init={}){return new Request('https://example.test'+path,{...init,headers:{authorization:'Bearer '+token,...init.headers}});},
     reset(){statements.length=0;},close(){sqlite.close();}};

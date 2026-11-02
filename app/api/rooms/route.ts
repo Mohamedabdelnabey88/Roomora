@@ -1,4 +1,4 @@
-import { fetchRoomoraApi } from "@/lib/roomora-api";
+import { fetchRoomoraApi, roomoraResponseHeaders } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -15,5 +15,5 @@ export async function GET() {
   });
 
   const payload = await response.json();
-  return NextResponse.json(payload, { status: response.status });
+  return NextResponse.json(payload, { status: response.status, headers: roomoraResponseHeaders(response) });
 }

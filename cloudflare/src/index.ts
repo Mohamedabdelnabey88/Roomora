@@ -1,3 +1,5 @@
+import { cacheSchemaStatements } from "./read-schema.ts";
+
 export interface Env {
   DB: D1Database;
   SETUP_KEY?: string;
@@ -159,6 +161,64 @@ function ensureReservationsSchema(env: Env): Promise<void> {
   ])]).then(() => {}).catch(error => { reservationSchemaReady.delete(env.DB); throw error; });
   reservationSchemaReady.set(env.DB, pending);
   return pending;
+}
+
+const cacheSchemaReady = new WeakMap<D1Database, Promise<void>>();
+type ReadCacheEntry = { body: string; expires: number; bytes: number };
+type ReadCache = { version: number; entries: Map<string,ReadCacheEntry>; pending: Map<string,Promise<string>>; bytes: number };
+const readCaches = new WeakMap<D1Database,ReadCache>();
+
+function ensureCacheSchema(env: Env): Promise<void> {
+  const existing=cacheSchemaReady.get(env.DB);
+  if(existing)return existing;
+  const pending=ensureReservationsSchema(env).then(()=>env.DB.batch(
+    cacheSchemaStatements().map(sql=>env.DB.prepare(sql))
+  )).then(()=>{}).catch(error=>{cacheSchemaReady.delete(env.DB);throw error;});
+  cacheSchemaReady.set(env.DB,pending);
+  return pending;
+}
+
+async function cachedData(env: Env, role: SessionUser["role"], url: URL, load:()=>Promise<unknown>):Promise<Response> {
+  await ensureCacheSchema(env);
+  // Read the primary database revision on every request. Triggers change it in
+  // the same transaction as each data write, invalidating other isolates too.
+  const state=await env.DB.prepare("SELECT version FROM roomora_read_state WHERE id=1").first<{version:number}>();
+  if(!state)throw new Error("read_cache_state_missing");
+  let cache=readCaches.get(env.DB);
+  if(!cache){cache={version:state.version,entries:new Map(),pending:new Map(),bytes:0};readCaches.set(env.DB,cache);}
+  if(cache.version!==state.version){cache.entries.clear();cache.pending.clear();cache.bytes=0;cache.version=state.version;}
+  const parameters=new URLSearchParams(url.searchParams);parameters.sort();
+  const key=JSON.stringify([role,url.pathname,parameters.toString(),state.version]);
+  const now=Date.now();
+  const hit=cache.entries.get(key);
+  if(hit&&hit.expires>now){
+    cache.entries.delete(key);cache.entries.set(key,hit);
+    return new Response(hit.body,{headers:{...cors,"content-type":"application/json; charset=utf-8","cache-control":"private, no-store","x-roomora-cache":"HIT"}});
+  }
+  if(hit){cache.entries.delete(key);cache.bytes-=hit.bytes;}
+  let pending=cache.pending.get(key);
+  if(!pending){
+    if(cache.pending.size>=64)return json({error:"too_many_requests"},{status:429,headers:{"retry-after":"1","cache-control":"private, no-store"}});
+    const owner=cache;
+    pending=load().then(payload=>{
+      const body=JSON.stringify(payload);
+      const bytes=encoder.encode(body).byteLength;
+      if(owner.version===state.version&&bytes<=512*1024){
+        while(owner.entries.size>=64||owner.bytes+bytes>8*1024*1024){
+          const oldest=owner.entries.keys().next().value;
+          if(oldest===undefined)break;
+          owner.bytes-=owner.entries.get(oldest)!.bytes;owner.entries.delete(oldest);
+        }
+        owner.entries.set(key,{body,bytes,expires:Date.now()+15000});owner.bytes+=bytes;
+      }
+      return body;
+    });
+    cache.pending.set(key,pending);
+    const clear=()=>{if(owner.pending.get(key)===pending)owner.pending.delete(key);};
+    void pending.then(clear,clear);
+  }
+  const body=await pending;
+  return new Response(body,{headers:{...cors,"content-type":"application/json; charset=utf-8","cache-control":"private, no-store","x-roomora-cache":"MISS"}});
 }
 
 async function hotelBusinessDay(env: Env, at = new Date()) {
@@ -335,6 +395,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       if(!actor)return json({error:"unauthorized"},{status:401});
       await ensureReservationsSchema(env);
 
+      return cachedData(env,actor.role,url,async()=>{
       const rooms=await env.DB.prepare(`
         SELECT id,number,floor,room_type,operational_status
         FROM rooms
@@ -373,7 +434,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         reservations: bookingsByRoom.get(room.id) || []
       }));
       logReadUsage(url.pathname, [rooms, stays, reservations]);
-      return json(result);
+      return result;
+      });
     }
 
     if (url.pathname === "/api/reservations/availability" && request.method === "GET") {
@@ -388,6 +450,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         return json({error:"invalid_reservation_range"},{status:400});
       }
 
+      return cachedData(env,actor.role,url,async()=>{
       const rooms=await env.DB.prepare(`
         SELECT id,number,floor,room_type,operational_status
         FROM rooms
@@ -421,13 +484,15 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         return { ...room, available: reason === "", reason };
       });
       logReadUsage(url.pathname, [rooms, stays, reservations]);
-      return json(result);
+      return result;
+      });
     }
 
     if (url.pathname === "/api/reservations" && request.method === "GET") {
       const actor=await requireSession(request,env);
       if(!actor)return json({error:"unauthorized"},{status:401});
       await ensureReservationsSchema(env);
+      return cachedData(env,actor.role,url,async()=>{
       const result=await env.DB.prepare(`
         SELECT rv.id,rv.room_id,rv.guest_name,rv.guest_phone,rv.checkin_at,rv.checkout_at,
                rv.status,rv.note,rv.stay_id,rv.created_at,
@@ -441,7 +506,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           rv.checkin_at ASC
         LIMIT 1000
       `).all();
-      return json(result.results);
+      return result.results;
+      });
     }
 
     if (url.pathname === "/api/reservations" && request.method === "POST") {
@@ -1097,20 +1163,56 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     if (url.pathname === "/api/requests" && request.method === "GET") {
-      const actor = await requireSession(request, env);
-      if (!actor) return json({ error:"unauthorized" }, { status:401 });
-
-      await ensureReadIndexes(env);
-
-      const scope = url.searchParams.get("scope") || "active";
-      const roomNumber = url.searchParams.get("room")?.trim() || "";
-      const statusFilter =
-        scope === "all" ? "" :
-        scope === "completed" ? "AND sr.status IN ('delivered','cancelled')" :
-        "AND sr.status IN ('new','acknowledged','preparing','approval_required')";
-      const roomFilter = roomNumber ? "AND r.number = ?1" : "";
-
-      const sql = `
+      const actor=await requireSession(request,env);
+      if(!actor)return json({error:"unauthorized"},{status:401});
+      const paged=url.searchParams.get("paged")==="1";
+      const scope=url.searchParams.get("scope")||"active";
+      const status=url.searchParams.get("status")||"all";
+      const room=url.searchParams.get("room")?.trim()||"";
+      const query=url.searchParams.get("q")?.trim()||"";
+      const from=url.searchParams.get("from")||"",to=url.searchParams.get("to")||"";
+      const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+"T12:00:00Z"))&&new Date(value+"T12:00:00Z").toISOString().slice(0,10)===value;
+      if(query.length>80||!["active","completed","all"].includes(scope)||
+         !["all","new","acknowledged","preparing","approval_required","delivered","cancelled"].includes(status)||
+         (from&&!validDate(from))||(to&&!validDate(to))||(from&&to&&from>to)) {
+        return json({error:"invalid_request_filter"},{status:400});
+      }
+      let cursor:{at:string;id:string}|null=null;
+      const rawCursor=url.searchParams.get("cursor");
+      if(rawCursor){
+        try{
+          const value=JSON.parse(new TextDecoder().decode(base64ToBytes(rawCursor.replaceAll("-","+").replaceAll("_","/"))));
+          if(typeof value?.at!=="string"||!Number.isFinite(Date.parse(value.at))||typeof value?.id!=="string"||!value.id||value.id.length>128)throw new Error("cursor");
+          cursor=value;
+        }catch{return json({error:"invalid_request_cursor"},{status:400});}
+      }
+      const rawSize=Number(url.searchParams.get("page_size")||25);
+      if(paged&&(!Number.isInteger(rawSize)||rawSize<1||rawSize>50))return json({error:"invalid_page_size"},{status:400});
+      const pageSize=paged?rawSize:250;
+      return cachedData(env,actor.role,url,async()=>{
+        const values:unknown[]=[];
+        const bind=(value:unknown)=>{values.push(value);return "?"+values.length;};
+        const filters:string[]=[];
+        if(scope==="active")filters.push("sr.status IN ('new','acknowledged','preparing','approval_required')");
+        if(scope==="completed")filters.push("sr.status IN ('delivered','cancelled')");
+        if(status!=="all")filters.push("sr.status="+bind(status));
+        if(room)filters.push("r.number="+bind(room));
+        if(query){
+          const term=bind(query);
+          filters.push(`(instr(lower(r.number||' '||s.guest_name),lower(${term}))>0 OR EXISTS(
+            SELECT 1 FROM service_request_lines search_line JOIN request_items search_item ON search_item.id=search_line.item_id
+            WHERE search_line.request_id=sr.id AND instr(lower(search_item.name),lower(${term}))>0))`);
+        }
+        if(from)filters.push("datetime(sr.requested_at)>=datetime("+bind(from+"T00:00:00+03:00")+")");
+        if(to){const end=new Date(to+"T00:00:00+03:00");end.setUTCDate(end.getUTCDate()+1);filters.push("datetime(sr.requested_at)<datetime("+bind(end.toISOString())+")");}
+        if(url.searchParams.get("late")==="1")filters.push("sr.status IN ('new','acknowledged','preparing','approval_required') AND datetime(sr.requested_at)<=datetime('now','-15 minutes')");
+        if(paged&&cursor)filters.push(`(datetime(sr.requested_at),sr.id)<(datetime(${bind(cursor.at)}),${bind(cursor.id)})`);
+        const limit=bind(pageSize+(paged?1:0));
+        const sql=`WITH selected AS (
+          SELECT sr.* FROM service_requests sr JOIN rooms r ON r.id=sr.room_id JOIN stays s ON s.id=sr.stay_id
+          WHERE ${filters.length?filters.join(" AND "):"1=1"}
+          ORDER BY datetime(sr.requested_at) DESC,sr.id DESC LIMIT ${limit}
+        )
         SELECT
           sr.id,
           sr.stay_id,
@@ -1133,24 +1235,29 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           sr.note,
           GROUP_CONCAT(ri.name || ' × ' || srl.quantity, '، ') AS items,
           MAX(ar.reason) AS approval_reason
-        FROM service_requests sr
-        JOIN rooms r ON r.id = sr.room_id
-        JOIN stays s ON s.id = sr.stay_id
-        LEFT JOIN service_request_lines srl ON srl.request_id = sr.id
-        LEFT JOIN request_items ri ON ri.id = srl.item_id
-        LEFT JOIN approval_requests ar ON ar.service_request_id = sr.id
-        WHERE 1=1
-          ${statusFilter}
-          ${roomFilter}
-        GROUP BY sr.id
-        ORDER BY sr.requested_at DESC
-        LIMIT 250
-      `;
-
-      const stmt = env.DB.prepare(sql);
-      const result = roomNumber ? await stmt.bind(roomNumber).all() : await stmt.all();
-      logReadUsage(url.pathname, [result]);
-      return json(result.results);
+        FROM selected sr
+        JOIN rooms r ON r.id=sr.room_id JOIN stays s ON s.id=sr.stay_id
+        LEFT JOIN service_request_lines srl ON srl.request_id=sr.id
+        LEFT JOIN request_items ri ON ri.id=srl.item_id
+        LEFT JOIN approval_requests ar ON ar.service_request_id=sr.id
+        GROUP BY sr.id ORDER BY datetime(sr.requested_at) DESC,sr.id DESC`;
+        const result=await env.DB.prepare(sql).bind(...values).all<{id:string;requested_at:string;[key:string]:unknown}>();
+        logReadUsage(url.pathname,[result]);
+        if(!paged)return result.results;
+        const [totals,lateCount]=await Promise.all([
+          env.DB.prepare("SELECT status,total FROM request_status_counts").all<{status:string;total:number}>(),
+          env.DB.prepare(`SELECT COUNT(*) AS total FROM service_requests
+            WHERE status IN ('new','acknowledged','preparing','approval_required') AND datetime(requested_at)<=datetime('now','-15 minutes')`).first<{total:number}>()
+        ]);
+        const counts={active:0,approvals:0,late:lateCount?.total||0,completed:0};
+        for(const row of totals.results){
+          if(["delivered","cancelled"].includes(row.status))counts.completed+=row.total;else counts.active+=row.total;
+          if(row.status==="approval_required")counts.approvals=row.total;
+        }
+        const hasMore=result.results.length>pageSize,items=result.results.slice(0,pageSize),last=items[items.length-1];
+        const nextCursor=hasMore&&last?bytesToBase64(encoder.encode(JSON.stringify({at:last.requested_at,id:last.id}))).replaceAll("+","-").replaceAll("/","_").replaceAll("=",""):null;
+        return {items,hasMore,nextCursor,pageSize,counts,role:actor.role};
+      });
     }
 
     if (url.pathname === "/api/requests" && request.method === "POST") {
@@ -1673,6 +1780,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
       await ensureReadIndexes(env);
 
+      return cachedData(env,user.role,url,async()=>{
       const result = await env.DB.prepare(`
         SELECT
           r.id,
@@ -1698,7 +1806,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         ORDER BY r.floor, CASE WHEN r.number GLOB '[0-9]*' THEN CAST(r.number AS INTEGER) ELSE 0 END, r.number
       `).all();
       logReadUsage(url.pathname, [result]);
-      return json(result.results);
+      return result.results;
+      });
     }
 
     return json({ error: "not_found" }, { status: 404 });

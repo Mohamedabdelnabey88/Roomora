@@ -1,4 +1,4 @@
-import { fetchRoomoraApi } from "@/lib/roomora-api";
+import { fetchRoomoraApi, roomoraResponseHeaders } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -19,7 +19,7 @@ export async function GET(request:Request) {
     headers:{authorization:"Bearer " + token},
     cache:"no-store"
   });
-  return NextResponse.json(await response.json(),{status:response.status});
+  return NextResponse.json(await response.json(),{status:response.status,headers:roomoraResponseHeaders(response)});
 }
 
 export async function POST(request:Request) {
@@ -31,5 +31,5 @@ export async function POST(request:Request) {
     body:await request.text(),
     cache:"no-store"
   });
-  return NextResponse.json(await response.json(),{status:response.status});
+  return NextResponse.json(await response.json(),{status:response.status,headers:roomoraResponseHeaders(response)});
 }
