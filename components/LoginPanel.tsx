@@ -1,4 +1,5 @@
 "use client";
+import { invalidateOperationsRequests } from "@/lib/operations-events";
 
 import { FormEvent, useState } from "react";
 import { motion } from "framer-motion";
@@ -37,6 +38,7 @@ export default function LoginPanel() {
         };
         throw new Error(messages[payload?.error] || "تعذر الاتصال بخدمة تسجيل الدخول. حاول مرة أخرى");
       }
+      invalidateOperationsRequests();
       const next = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
       router.replace(next || "/");
       router.refresh();

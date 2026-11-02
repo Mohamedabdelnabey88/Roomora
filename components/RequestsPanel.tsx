@@ -1,11 +1,11 @@
 "use client";
+import { fetchOperations, notifyOperationsChanged, startOperationsRefresh } from "@/lib/operations-events";
 
 import { useEffect,useMemo,useState } from "react";
 import Link from "next/link";
 import { CalendarBlank,Clock,DownloadSimple,Funnel,ListChecks,MagnifyingGlass,ShieldCheck } from "@phosphor-icons/react";
 import RequestActions,{type ActiveRequest} from "@/components/RequestActions";
 import RequestDetailDialog from "@/components/RequestDetailDialog";
-import { subscribeOperationsChanged } from "@/lib/operations-events";
 
 const statusLabels:Record<string,string>={new:"جديد",acknowledged:"تم الاستلام",preparing:"جاري التجهيز",approval_required:"بانتظار موافقة",delivered:"تم التسليم",cancelled:"ملغي"};
 const activeStatuses=new Set(["new","acknowledged","preparing","approval_required"]);
@@ -30,7 +30,7 @@ export default function RequestsPanel(){
   async function load(silent=false){
     if(!silent)setLoading(true);
     try{
-      const [rr,ur]=await Promise.all([fetch("/api/requests?scope=all",{cache:"no-store"}),fetch("/api/auth/me",{cache:"no-store"})]);
+      const [rr,ur]=await Promise.all([fetchOperations("/api/requests?scope=all",{cache:"no-store"}),fetchOperations("/api/auth/me",{cache:"no-store"})]);
       if(rr.status===401||ur.status===401){window.location.href="/login";return}
       const [rp,up]=await Promise.all([rr.json().catch(()=>[]),ur.json().catch(()=>null)]);
       if(!rr.ok||!Array.isArray(rp))throw new Error("تعذر تحميل طلبات الغرف");
@@ -41,18 +41,14 @@ export default function RequestsPanel(){
 
   useEffect(()=>{
     void load();
-    const refresh=()=>void load(true);
-    const timer=window.setInterval(refresh,15000);
-    const unsubscribe=subscribeOperationsChanged(refresh);
-    window.addEventListener("focus",refresh);
-    return()=>{window.clearInterval(timer);window.removeEventListener("focus",refresh);unsubscribe()}
+    return startOperationsRefresh(()=>load(true));
   },[]);
 
   async function deleteRequest(id:string){
     if(role!=="admin"||deletingId)return;
     setDeletingId(id);setDeleteError("");
     try{
-      const response=await fetch("/api/requests/"+encodeURIComponent(id),{method:"DELETE"});
+      const response=await fetchOperations("/api/requests/"+encodeURIComponent(id),{method:"DELETE"});
       const payload=await response.json().catch(()=>({}));
       const map:Record<string,string>={
         forbidden:"الحذف النهائي متاح لمدير النظام فقط.",
@@ -62,6 +58,7 @@ export default function RequestsPanel(){
       if(!response.ok)throw new Error(map[payload.error]||"تعذر حذف الطلب نهائيًا.");
       setDeleteConfirmId(null);
       if(detailId===id)setDetailId(null);
+      notifyOperationsChanged();
       await load(true);
     }catch(e){
       setDeleteError(e instanceof Error?e.message:"تعذر حذف الطلب نهائيًا.");
@@ -189,6 +186,6 @@ export default function RequestsPanel(){
         </article>
       })}</div>}
     </section>
-    <RequestDetailDialog requestId={detailId} role={role} onClose={()=>setDetailId(null)} onDeleted={async()=>{setDetailId(null);await load(true)}}/>
+    <RequestDetailDialog requestId={detailId} role={role} onClose={()=>setDetailId(null)} onDeleted={async()=>{setDetailId(null);notifyOperationsChanged();await load(true)}}/>
   </main>;
 }
