@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -10,7 +11,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const { id } = await context.params;
   const body = await request.text();
-  const response = await fetch(API_BASE + "/api/stays/" + encodeURIComponent(id) + "/extend", {
+  const response = await fetchRoomoraApi(API_BASE + "/api/stays/" + encodeURIComponent(id) + "/extend", {
     method:"POST",
     headers:{
       "content-type":"application/json",

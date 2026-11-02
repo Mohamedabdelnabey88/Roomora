@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -9,7 +10,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!session) return NextResponse.json({ error:"unauthorized" }, { status:401 });
   const { id } = await context.params;
   const body = await request.text();
-  const response = await fetch(`${API_BASE}/api/admin/users/${encodeURIComponent(id)}`, {
+  const response = await fetchRoomoraApi(`${API_BASE}/api/admin/users/${encodeURIComponent(id)}`, {
     method:"PATCH",
     headers:{ "content-type":"application/json", authorization:`Bearer ${session}` },
     body,

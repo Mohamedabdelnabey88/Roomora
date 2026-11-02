@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -8,7 +9,7 @@ export async function POST() {
   const token = jar.get("roomora_session")?.value;
 
   if (token) {
-    await fetch(`${API_BASE}/api/auth/logout`, {
+    await fetchRoomoraApi(`${API_BASE}/api/auth/logout`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}` },
       cache: "no-store"

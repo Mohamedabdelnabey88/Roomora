@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -15,7 +16,7 @@ export async function GET(request:Request) {
   const target=new URL(API_BASE+"/api/reservations/availability");
   target.searchParams.set("from",url.searchParams.get("from")||"");
   target.searchParams.set("to",url.searchParams.get("to")||"");
-  const response=await fetch(target,{headers:{authorization:"Bearer "+t},cache:"no-store"});
+  const response=await fetchRoomoraApi(target,{headers:{authorization:"Bearer "+t},cache:"no-store"});
   const payload=await response.json().catch(()=>({error:"invalid_response"}));
   return NextResponse.json(payload,{status:response.status});
 }

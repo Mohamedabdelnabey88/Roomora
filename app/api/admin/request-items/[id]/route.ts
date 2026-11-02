@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -8,7 +9,7 @@ export async function PATCH(request:Request, context:{params:Promise<{id:string}
   const token=jar.get("roomora_session")?.value || "";
   if(!token) return NextResponse.json({error:"unauthorized"},{status:401});
   const {id}=await context.params;
-  const response=await fetch(API_BASE+"/api/admin/request-items/"+encodeURIComponent(id),{
+  const response=await fetchRoomoraApi(API_BASE+"/api/admin/request-items/"+encodeURIComponent(id),{
     method:"PATCH",
     headers:{"content-type":"application/json",authorization:"Bearer "+token},
     body:await request.text(),

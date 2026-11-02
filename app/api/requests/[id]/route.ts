@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -8,7 +9,7 @@ export async function GET(_request:Request, context:{params:Promise<{id:string}>
   const token=jar.get("roomora_session")?.value || "";
   if(!token) return NextResponse.json({error:"unauthorized"},{status:401});
   const {id}=await context.params;
-  const response=await fetch(API_BASE+"/api/requests/"+encodeURIComponent(id),{
+  const response=await fetchRoomoraApi(API_BASE+"/api/requests/"+encodeURIComponent(id),{
     headers:{authorization:"Bearer "+token},
     cache:"no-store"
   });
@@ -23,7 +24,7 @@ export async function DELETE(_request:Request, context:{params:Promise<{id:strin
   if(!token) return NextResponse.json({error:"unauthorized"},{status:401});
   const {id}=await context.params;
   try {
-    const response=await fetch(API_BASE+"/api/requests/"+encodeURIComponent(id),{
+    const response=await fetchRoomoraApi(API_BASE+"/api/requests/"+encodeURIComponent(id),{
       method:"DELETE",
       headers:{authorization:"Bearer "+token},
       cache:"no-store"

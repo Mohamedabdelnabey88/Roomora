@@ -1,3 +1,4 @@
+import { fetchRoomoraApi } from "@/lib/roomora-api";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -7,7 +8,7 @@ export async function GET() {
   const jar = await cookies();
   const token = jar.get("roomora_session")?.value || "";
   if (!token) return NextResponse.json({error:"unauthorized"},{status:401});
-  const response = await fetch(API_BASE + "/api/request-items", {
+  const response = await fetchRoomoraApi(API_BASE + "/api/request-items", {
     headers:{authorization:"Bearer " + token},
     cache:"no-store"
   });
