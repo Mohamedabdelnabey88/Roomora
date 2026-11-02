@@ -21,7 +21,7 @@ export async function fetchOperations(input: string, init: RequestInit = {}, fet
   if (Date.now() < quotaPauseUntil) {
     return Response.json({ error: quotaError }, { status: 503, headers: { "retry-after": "60" } });
   }
-  const key = JSON.stringify([input, init.credentials || "same-origin", Array.from(new Headers(init.headers).entries())]);
+  const key = JSON.stringify([input, init.cache || "default", init.credentials || "same-origin", Array.from(new Headers(init.headers).entries())]);
   let pending = reads.get(key);
   if (!pending) {
     const requestGeneration = generation;
@@ -76,7 +76,7 @@ export function startOperationsRefresh(callback: () => void | Promise<unknown>, 
   const onStorage = (event: StorageEvent) => {
     if (event.key === "roomora:operations-version") { invalidateOperationsRequests(); onMutation(); }
   };
-  const onForeground = () => { void refresh(dirty); };
+  const onForeground = () => { if (document.visibilityState === "visible") void refresh(dirty); };
   const timer = intervalMs > 0 ? window.setInterval(() => { void refresh(); }, intervalMs) : null;
   window.addEventListener(OPERATIONS_CHANGED_EVENT, onMutation);
   window.addEventListener("storage", onStorage);

@@ -19,6 +19,7 @@ test('polling pauses in hidden tabs and foreground events coalesce',async t=>{
  b.document.visibilityState='hidden';b.document.dispatchEvent(new Event('visibilitychange'));b.tick(180000);await flush();assert.equal(calls,1);
  b.document.visibilityState='visible';b.document.dispatchEvent(new Event('visibilitychange'));b.window.dispatchEvent(new Event('focus'));b.window.dispatchEvent(new Event('pageshow'));await flush();assert.equal(calls,2);
  b.tick(1000);b.window.dispatchEvent(new Event('focus'));await flush();assert.equal(calls,2);
+ b.document.visibilityState='hidden';b.document.dispatchEvent(new Event('visibilitychange'));b.document.visibilityState='visible';b.document.dispatchEvent(new Event('visibilitychange'));await flush();assert.equal(calls,2,'quick tab switches cannot bypass the foreground minimum gap');
  stop();b.tick(120000);b.window.dispatchEvent(new Event(OPERATIONS_CHANGED_EVENT));await flush();assert.equal(calls,2);
 });
 
