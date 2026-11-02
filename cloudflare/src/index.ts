@@ -169,7 +169,7 @@ export default {
         return json({ ok: true, service: "roomora-api", database: "connected", rooms: Number(row?.rooms ?? 0) });
       } catch (error) {
         console.error("health_check_failed", { stage, error: error instanceof Error ? error.message : String(error) });
-        return json({ ok: false, error: "health_check_failed", stage, reason: databaseFailureReason(error) }, { status: 503 });
+        return json({ ok: false, error: "health_check_failed", stage, reason: databaseFailureReason(error), diagnostic: error instanceof Error ? error.message.slice(0, 240) : "Unknown health query error" }, { status: 503 });
       }
     }
 
